@@ -1,0 +1,32 @@
+{% extends 'nucleo/base.html' %}
+{% load crispy_forms_tags %}
+
+{% block title %}Registrar Nueva PQRS{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+        <div class="card">
+            <div class="card-header">
+                <h2>
+                    {% if pqrs %}
+                        Editar PQRS: {{ pqrs.radicado }}
+                    {% else %}
+                        Registrar Nueva PQRS
+                    {% endif %}
+                </h2>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    {{ form|crispy }}
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary mt-3 btn-lg">Guardar PQRS</button>
+                        <a href="{% url 'dashboard' %}" class="btn btn-secondary">Cancelar</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

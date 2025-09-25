@@ -1,0 +1,101 @@
+{% extends 'nucleo/base.html' %}
+{% load crispy_forms_tags %}
+
+{% block title %}Dashboard de PQRS{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Tablero de Control</h1>
+     {% if es_coordinador %}
+        <a href="{% url 'crear_pqrs' %}" class="btn btn-primary btn-lg">+ Registrar Nueva PQRS</a>
+    {% endif %}
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-center text-white bg-primary">
+            <div class="card-body">
+                <h1 class="card-title">{{ total_pqrs }}</h1>
+                <p class="card-text">PQRS Totales</p>
+            </div>
+        </div>
+    </div>
+    {% for item in conteo_por_estado %}
+        <div class="col-md-2">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h1 class="card-title">{{ item.total }}</h1>
+                    <p class="card-text">{{ item.estado }}</p>
+                </div>
+            </div>
+        </div>
+    {% endfor %}
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end filter-form">
+            <div class="col-md-4">
+                {{ filter_form.q|as_crispy_field }}
+            </div>
+            <div class="col-md-2">
+                {{ filter_form.vigencia|as_crispy_field }} </div>
+            <div class="col-md-2">
+                {{ filter_form.responsable|as_crispy_field }}
+            </div>
+            <div class="col-md-2">
+                {{ filter_form.estado|as_crispy_field }}
+            </div>
+            <div class="col-md-2 d-grid">
+                <button type="submit" class="btn btn-secondary">Filtrar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h3>Listado de PQRS</h3>
+    </div>
+    <div class="card-body">
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>Radicado</th>
+                    <th>Asunto</th>
+                    <th>Responsable</th>
+                    <th>Vencimiento</th>
+                    <th>Estado Proceso</th>
+                    <th>Estado Tiempo</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for pqrs in lista_pqrs %}
+                    <tr>
+                        <td><a href="{% url 'editar_pqrs' pqrs.id %}">{{ pqrs.radicado }}</a></td>
+                        <td>{{ pqrs.asunto }}</td>
+                        <td>{{ pqrs.responsable.first_name }} {{ pqrs.responsable.last_name }}</td>
+                        <td>{{ pqrs.fecha_vencimiento }}</td>
+                        <td>{{ pqrs.estado }}</td>
+                        <td>
+                            {% if pqrs.estado_tiempo == "Vencido" %}
+                                <span class="badge bg-danger">Vencido</span>
+                            {% elif pqrs.estado_tiempo == "Por Vencer" %}
+                                <span class="badge bg-warning text-dark">Por Vencer</span>
+                            {% elif pqrs.estado_tiempo == "A Tiempo" %}
+                                <span class="badge bg-success">A Tiempo</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ pqrs.estado_tiempo }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center">No se encontraron PQRS con los filtros seleccionados.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
