@@ -1,4 +1,5 @@
 # settings.py
+import os # Asegúrate que esta línea esté al principio del archivo
 
 from pathlib import Path
 import socket
@@ -110,3 +111,10 @@ CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"
 CRISPY_TEMPLATE_PACK = "bootstrap5"
 LOGIN_URL = 'admin:login'
 LOGIN_REDIRECT_URL = '/'
+STATIC_URL = 'static/'
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, "static"),
+]
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')

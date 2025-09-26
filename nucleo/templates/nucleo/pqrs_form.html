@@ -1,11 +1,13 @@
 {% extends 'nucleo/base.html' %}
 {% load crispy_forms_tags %}
 
-{% block title %}Registrar Nueva PQRS{% endblock %}
+{% block title %}
+    {% if pqrs %}Editar PQRS: {{ pqrs.radicado }}{% else %}Registrar Nueva PQRS{% endif %}
+{% endblock %}
 
 {% block content %}
 <div class="row">
-    <div class="col-md-8 offset-md-2">
+    <div class="col-md-10 offset-md-1">
         <div class="card">
             <div class="card-header">
                 <h2>
@@ -19,9 +21,64 @@
             <div class="card-body">
                 <form method="post">
                     {% csrf_token %}
-                    {{ form|crispy }}
-                    <div class="d-grid gap-2">
-                        <button type="submit" class="btn btn-primary mt-3 btn-lg">Guardar PQRS</button>
+
+                    <div class="row g-3">
+
+                        {% if form.radicado %} {# Estos campos solo existen en el form del coordinador #}
+                            <div class="col-md-6">
+                                {{ form.radicado|as_crispy_field }}
+                            </div>
+                            <div class="col-md-6">
+                                {{ form.fecha_recepcion_inicial|as_crispy_field }}
+                            </div>
+                        {% endif %}
+
+                        {% if form.asunto %}
+                            <div class="col-12">
+                                {{ form.asunto|as_crispy_field }}
+                            </div>
+                        {% endif %}
+
+                        {% if form.peticionario_nombre %}
+                            <div class="col-md-5">
+                                {{ form.peticionario_nombre|as_crispy_field }}
+                            </div>
+                            <div class="col-md-4">
+                                {{ form.peticionario_email|as_crispy_field }}
+                            </div>
+                            <div class="col-md-3">
+                                {{ form.calidad_peticionario|as_crispy_field }}
+                            </div>
+                        {% endif %}
+
+                        <div class="row g-3 px-1 mb-3">
+                            {% if form.tipo_tramite %}
+                                <div class="col-md-4">
+                                    {{ form.tipo_tramite|as_crispy_field }}
+                                </div>
+                            {% endif %}
+                            {% if form.responsable %}
+                                <div class="col-md-4">
+                                    {{ form.responsable|as_crispy_field }}
+                                </div>
+                            {% endif %}
+                            {% if form.estado %}
+                                <div class="col-md-4">
+                                    {{ form.estado|as_crispy_field }}
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        {% if form.respuesta_tramite %}
+                            <div class="col-12">
+                                {{ form.respuesta_tramite|as_crispy_field }}
+                            </div>
+                        {% endif %}
+
+                    </div>
+
+                    <div class="d-grid gap-2 mt-4">
+                        <button type="submit" class="btn btn-primary btn-lg">Guardar Cambios</button>
                         <a href="{% url 'dashboard' %}" class="btn btn-secondary">Cancelar</a>
                     </div>
                 </form>

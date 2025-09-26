@@ -1,0 +1,124 @@
+{% extends 'nucleo/base.html' %}
+
+{% load auth_extras %}
+{% block title %}Detalle de PQRS: {{ pqrs.radicado }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Detalle de PQRS</h1>
+    <div>
+        <a href="{% url 'dashboard' %}" class="btn btn-secondary">‹ Volver al Dashboard</a>
+        {% if pqrs.responsable == user or user.is_superuser or user|groups:"Coordinadores" %}
+            <a href="{% url 'editar_pqrs' pqrs.id %}" class="btn btn-primary">Editar PQRS</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between">
+        <h4 class="mb-0">Radicado: {{ pqrs.radicado }}</h4>
+        <span class="badge 
+            {% if pqrs.estado_tiempo == 'Vencido' %}bg-danger{% elif pqrs.estado_tiempo == 'Por Vencer' %}bg-warning text-dark{% else %}bg-success{% endif %}
+            fs-6 align-self-center">{{ pqrs.estado_tiempo }}</span>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-7">
+                <h5>Asunto</h5>
+                <p class="lead">{{ pqrs.asunto }}</p>
+                <hr>
+                <h5>Respuesta al Trámite</h5>
+                {% if pqrs.respuesta_tramite %}
+                    <p style="white-space: pre-wrap;">{{ pqrs.respuesta_tramite }}</p>
+                {% else %}
+                    <p class="text-muted"><em>Aún no se ha registrado una respuesta.</em></p>
+                {% endif %}
+            </div>
+            <div class="col-md-5 bg-light p-3 border rounded">
+                <dl class="row">
+                    <dt class="col-sm-5">Estado del Proceso:</dt>
+                    <dd class="col-sm-7">{{ pqrs.estado }}</dd>
+                    <dt class="col-sm-5">Responsable:</dt>
+                    <dd class="col-sm-7">{{ pqrs.responsable.get_full_name|default:"No asignado" }}</dd>
+                    <hr class="my-2">
+                    <dt class="col-sm-5">Fecha de Recepción:</dt>
+                    <dd class="col-sm-7">{{ pqrs.fecha_recepcion_inicial }}</dd>
+                    <dt class="col-sm-5">Fecha de Vencimiento:</dt>
+                    <dd class="col-sm-7">{{ pqrs.fecha_vencimiento }}</dd>
+                    <dt class="col-sm-5">Fecha de Respuesta:</dt>
+                    <dd class="col-sm-7">{{ pqrs.fecha_respuesta|default:"--" }}</dd>
+                    <hr class="my-2">
+                    <dt class="col-sm-5">Nombre Peticionario:</dt>
+                    <dd class="col-sm-7">{{ pqrs.peticionario_nombre }}</dd>
+                    <dt class="col-sm-5">Calidad Peticionario:</dt>
+                    <dd class="col-sm-7">{{ pqrs.calidad_peticionario.tipo }}</dd>
+                    <dt class="col-sm-5">Tipo de Trámite:</dt>
+                    <dd class="col-sm-7">{{ pqrs.tipo_tramite.nombre }}</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<form action="{% url 'enviar_respuesta_email' pqrs.id %}" method="POST">
+    {% csrf_token %}
+    <div class="card mt-4">
+        <div class="card-header" data-bs-toggle="collapse" data-bs-target="#collapseAdjuntos" style="cursor: pointer;">
+            <h5 class="mb-0 d-flex justify-content-between align-items-center">
+                <span><i class="fas fa-folder-open"></i> Archivos Adjuntos (Selecciona para enviar por correo)</span>
+                <i class="fas fa-chevron-down"></i>
+            </h5>
+        </div>
+        <div id="collapseAdjuntos" class="collapse show">
+            <div class="card-body">
+                {% if adjuntos %}
+                    <ul class="list-group list-group-flush">
+                        {% for adjunto in adjuntos %}
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <input class="form-check-input me-2" type="checkbox" name="adjuntos_a_enviar" value="{{ adjunto.id }}" id="adjunto_{{ adjunto.id }}">
+                                    <label class="form-check-label" for="adjunto_{{ adjunto.id }}">
+                                        <a href="{{ adjunto.archivo.url }}" target="_blank">{{ adjunto.nombre_corto }}</a>
+                                    </label>
+                                    <span class="badge bg-info text-dark ms-2">{{ adjunto.get_tipo_archivo_display }}</span>
+                                    {% if adjunto.descripcion %}
+                                        <small class="text-muted d-block ms-4">{{ adjunto.descripcion }}</small>
+                                    {% endif %}
+                                </div>
+                                <span class="badge bg-light text-dark">{{ adjunto.fecha_carga|date:"d M Y, P" }}</span>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <p class="text-muted mb-0">Aún no hay archivos adjuntos para este caso.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% if pqrs.estado == 'Resuelto' and user|groups:"Coordinadores" %}
+    <div class="text-end mt-3">
+        <a href="{% url 'generar_pdf' pqrs.id %}" class="btn btn-info" target="_blank">
+            <i class="fas fa-file-pdf"></i> Generar PDF
+        </a>
+        <button type="submit" class="btn btn-success">
+            <i class="fas fa-paper-plane"></i> Enviar Correo con Adjuntos Seleccionados
+        </button>
+    </div>
+    {% endif %}
+</form> 
+<div class="card mt-4">
+    <div class="card-footer">
+        <h6><i class="fas fa-upload"></i> Subir Nuevo Archivo</h6>
+        <form method="POST" action="{% url 'detalle_pqrs' pqrs.id %}" enctype="multipart/form-data" class="mt-3">
+            {% csrf_token %}
+            <div class="row g-2 align-items-center">
+                <div class="col-md-4">{{ form_adjuntos.archivo.label_tag }}{{ form_adjuntos.archivo }}</div>
+                <div class="col-md-3">{{ form_adjuntos.descripcion.label_tag }}{{ form_adjuntos.descripcion }}</div>
+                <div class="col-md-3">{{ form_adjuntos.tipo_archivo.label_tag }}{{ form_adjuntos.tipo_archivo }}</div>
+                <div class="col-md-2 align-self-end"><button type="submit" class="btn btn-primary w-100">Adjuntar</button></div>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

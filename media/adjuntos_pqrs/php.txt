@@ -1,0 +1,381 @@
+<?php
+// Conexión a la base de datos (ajusta los valores según tu configuración)
+$servername = "localhost";
+$username = "root"; // Cambiar por tu nombre de usuario de MySQL
+$password = ""; // Cambiar por tu contraseña de MySQL
+$dbname = "comisiones_sabaticos"; // Cambiar por el nombre de tu base de datos
+
+// Crear conexión
+$conn = new mysqli($servername, $username, $password, $dbname);
+
+// Verificar conexión
+if ($conn->connect_error) {
+  die("Conexión fallida: " . $conn->connect_error);
+}
+
+// Obtener datos del formulario
+$comision = $_POST['comision'];
+/*$resolini = $_POST['resolini'];*/
+$profesor = $_POST['profesor'];
+$dedicacion = $_POST['dedicacion'];
+$universidad = $_POST['universidad'];
+$denominacion_programa= $_POST['denominacion_programa'];
+$nombre_trabajo = $_POST['nombre_trabajo'];
+$fechaINI = $_POST['fechaINI'];
+$fechafin = $_POST['fechaFIN'];
+$observacion = $_POST['observacion'];
+$periodo = $_POST['periodo'];
+$vigencia = $_POST['vigencia'];
+$reintegrado = 0;
+
+$fecha = new DateTime($fechaINI); // Crear un objeto DateTime con la fecha inicial
+
+
+$fechaInicial = new DateTime($fechaINI);
+$fechaFinal = new DateTime($fechafin);
+
+// Calcular la diferencia en meses
+$diferencia = $fechaInicial->diff($fechaFinal);
+
+// Obtener el número total de meses
+$duracion= ($diferencia->y * 12) + $diferencia->m;
+
+
+
+$fecha_resultado = $fechaFinal;
+
+    $fechaInicial = $fechaInicial->format('Y-m-d');
+    $fecha_resultado = $fecha_resultado->format('Y-m-d');
+
+
+
+$depto= null; 
+$fvence= null; 
+$tipoest_ant = null;
+
+
+/*$queryv = "SELECT * FROM tercero  LEFT JOIN
+comisionado
+on (comisionado.documento = tercero.documento_tercero )
+where tercero.documento_tercero = '$profesor' and comisionado.tipo_estudio = '$comision' order by comisionado.vence desc limit 1";
+*/
+
+//VER LA ULTIMA COMISION O SABATICO DEL TERCERO 
+$queryv ="SELECT tercero.id_tercero, tercero.documento_tercero, tercero.nombre_completo, tercero.apellido1, tercero.apellido2, tercero.nombre1, tercero.nombre2, tercero.fk_depto as depto_tercero, tercero.vincul, 
+tercero.sexo, tercero.estado, tercero.cargo_admin, comisionado.id, comisionado.documento, comisionado.fk_depto as depto_comision, comisionado.tipo_estudio, comisionado.duracion_meses, comisionado.dedicacion, comisionado.unversidad,
+comisionado.denominacion_prog, comisionado.nombre_trabajo, comisionado.estado, comisionado.observacion, comisionado.fechaINI, comisionado.vence, comisionado.vigencia,comisionado.periodo, comisionado.resol_Ini
+FROM tercero  LEFT JOIN
+comisionado
+on (comisionado.documento = tercero.documento_tercero and comisionado.tipo_estudio = '$comision'  )
+where tercero.documento_tercero ='$profesor' order by comisionado.vence desc limit 1";
+
+ 
+               $resultadv=mysqli_query($conn,$queryv);
+
+                while($listav=mysqli_fetch_array($resultadv)){
+                           $depto= $listav['depto_tercero']; 
+                            $fvence= $listav['vence']; 
+                            $tipoest_ant = $listav['tipo_estudio'];
+                        $resolini = $listav['resol_Ini'];
+                    $cargo_admin = $listav['cargo_admin'];
+                    
+                             }
+                //BUSCAR EL DEPARTAMENTO Y FACULTAD  DEL TERCERO PARA EVALUARSE LUEGO       
+      
+$queryterc_fac= "
+select tercero.id_tercero, tercero.documento_tercero, tercero.fk_depto, deparmanentos.NOMBRE_DEPTO_CORT, facultad.PK_FAC, facultad.NOMBREC_FAC
+from tercero, deparmanentos,facultad
+where 
+tercero.fk_depto = deparmanentos.PK_DEPTO AND
+deparmanentos.FK_FAC = facultad.PK_FAC and 
+tercero.documento_tercero ='$profesor'";
+
+
+               $resultadterc_fac=mysqli_query($conn,$queryterc_fac);
+
+                while($listaterc_fac=mysqli_fetch_array($resultadterc_fac)){
+                           $factter= $listaterc_fac['PK_FAC']; 
+                    $factnombre= $listaterc_fac['NOMBREC_FAC']; 
+                            $depter = $listaterc_fac['fk_depto']; 
+                    $deptnombre = $listaterc_fac['NOMBRE_DEPTO_CORT']; 
+                             }
+// MIRAR LOS CUPOS DE ESE DEPTO Y FAC
+$querysubdep = "SELECT 
+    t.Facultad, 
+    t.Departamento,
+    t.fk_depto, -- Agregando fk_depto
+    IFNULL(t.Total_Terceros, 0) AS Total_Terceros,
+    CASE 
+        WHEN t.Total_Terceros <= 5 THEN 0.5
+        ELSE CEIL(t.Total_Terceros * 0.1)
+    END AS Derecho_a_Cupos,
+    IFNULL(c.Total_Comisiones, 0) AS Total_Comisiones,
+    IFNULL(c.Total_Comisiones_Estudios, 0) AS Total_Comisiones_Estudios,
+    IFNULL(c.Total_Comisiones_Sabatico, 0) AS Total_Comisiones_Sabatico,
+    CASE 
+        WHEN t.Total_Terceros < 5 THEN 
+            0.5 - COALESCE(c.Total_Comisiones, 0)
+        ELSE 
+            ROUND(CEIL(t.Total_Terceros * 0.1) - COALESCE(c.Total_Comisiones, 0), 1)
+    END AS Cupos_Disponibles
+FROM (
+    SELECT 
+        f.NOMBREC_FAC AS Facultad, 
+        d.NOMBRE_DEPTO AS Departamento, 
+        d.PK_DEPTO AS fk_depto, -- Agregando fk_depto
+        COUNT(t.id_tercero) AS Total_Terceros
+    FROM 
+        tercero t
+    JOIN 
+        deparmanentos d ON t.fk_depto = d.PK_DEPTO
+    JOIN 
+        facultad f ON d.FK_FAC = f.PK_FAC
+    WHERE 
+        t.vincul IN ('PLANTA', 'DOCENTES ENCARGO ADM.')  AND  d.FK_FAC<>'10'
+        AND t.estado = 'ac'
+    GROUP BY 
+        f.NOMBREC_FAC, d.NOMBRE_DEPTO, d.PK_DEPTO -- Agregando fk_depto
+) AS t
+LEFT JOIN (
+    SELECT 
+        f.NOMBREC_FAC AS Facultad, 
+        d.NOMBRE_DEPTO AS Departamento,
+        COUNT(c.id) AS Total_Comisiones,
+        SUM(CASE WHEN c.tipo_estudio = 'COMISIÓN DE ESTUDIOS' THEN 1 ELSE 0 END) AS Total_Comisiones_Estudios,
+        SUM(CASE WHEN c.tipo_estudio = 'SABÁTICO' THEN 1 ELSE 0 END) AS Total_Comisiones_Sabatico
+    FROM 
+        comisionado c
+    JOIN 
+        deparmanentos d ON c.fk_depto = d.PK_DEPTO
+    JOIN 
+        facultad f ON d.FK_FAC = f.PK_FAC
+    WHERE
+        c.estado = 'ACTIVO' and d.FK_FAC<>'10' 
+    GROUP BY  
+        f.NOMBREC_FAC, d.NOMBRE_DEPTO
+) AS c ON t.Departamento = c.Departamento  
+WHERE 
+    t.fk_depto = '$depter'
+ORDER BY 
+    t.Facultad, t.Departamento";
+
+
+               $resultadsubdep=mysqli_query($conn,$querysubdep);
+
+                while($listasubdep=mysqli_fetch_array($resultadsubdep)){
+                           $deptcupos= $listasubdep['Cupos_Disponibles']; 
+                          
+                             }
+
+
+
+
+
+                       
+$querysubfac = "SELECT 
+   
+    t.Facultad,
+
+    SUM(t.Total_Terceros) AS Total_Terceros,
+    SUM(t.Derecho_a_Cupos) AS Derecho_a_Cupos,
+    SUM(c.Total_Comisiones) AS Total_Comisiones,
+    SUM(c.Total_Comisiones_Estudios) AS Total_Comisiones_Estudios,
+    SUM(c.Total_Comisiones_Sabatico) AS Total_Comisiones_Sabatico,
+    SUM(
+        CASE 
+            WHEN t.Total_Terceros <= 5 THEN 
+                0.5 - COALESCE(c.Total_Comisiones, 0)
+            ELSE 
+                ROUND(CEIL(t.Total_Terceros * 0.1) - COALESCE(c.Total_Comisiones, 0), 1)
+        END
+    ) AS Cupos_Disponibles
+FROM (
+    SELECT 
+        f.PK_FAC AS Facultad, 
+        d.NOMBRE_DEPTO AS Departamento, 
+        d.PK_DEPTO AS fk_depto, 
+        COUNT(t.id_tercero) AS Total_Terceros,
+        CASE 
+            WHEN COUNT(t.id_tercero) < 5 THEN 0.5
+            ELSE CEIL(COUNT(t.id_tercero) * 0.1)
+        END AS Derecho_a_Cupos
+    FROM 
+        tercero t
+    JOIN 
+        deparmanentos d ON t.fk_depto = d.PK_DEPTO
+    JOIN 
+        facultad f ON d.FK_FAC = f.PK_FAC
+    WHERE 
+        t.vincul IN ('PLANTA', 'DOCENTES ENCARGO ADM.')  AND  d.FK_FAC<>'10'
+        AND t.estado = 'ac'
+    GROUP BY 
+        f.NOMBREC_FAC, d.NOMBRE_DEPTO, d.PK_DEPTO
+) AS t
+LEFT JOIN (
+    SELECT 
+        f.NOMBREC_FAC AS Facultad, 
+        d.NOMBRE_DEPTO AS Departamento,
+        COUNT(c.id) AS Total_Comisiones,
+        SUM(CASE WHEN c.tipo_estudio = 'COMISIÓN DE ESTUDIOS' THEN 1 ELSE 0 END) AS Total_Comisiones_Estudios,
+        SUM(CASE WHEN c.tipo_estudio = 'SABÁTICO' THEN 1 ELSE 0 END) AS Total_Comisiones_Sabatico
+    FROM 
+        comisionado c
+    JOIN 
+        deparmanentos d ON c.fk_depto = d.PK_DEPTO
+    JOIN 
+        facultad f ON d.FK_FAC = f.PK_FAC
+    WHERE
+        c.estado = 'ACTIVO' and d.FK_FAC<>'10' 
+    GROUP BY  
+        f.NOMBREC_FAC, d.NOMBRE_DEPTO
+) AS c ON t.Departamento = c.Departamento  
+WHERE 
+    t.Facultad = '$factter';";
+
+
+
+               $resultadsubfac=mysqli_query($conn,$querysubfac);
+
+                while($listasubfac=mysqli_fetch_array($resultadsubfac)){
+                           $factcupos= $listasubfac['Cupos_Disponibles']; 
+                          
+                             }
+
+
+
+
+// Insertar datos en la base de datos
+
+//codigo para saber si cumple fechas de sabatico
+
+ // Ejemplo de fecha de vencimiento
+$hoy = date('Y-m-d'); // Fecha actual
+
+$acaptada = ''; // Variable para almacenar el estado de aceptación
+if ($tipoest_ant=='SABÁTICO') {
+if ($cargo_admin == null &( $fvence == null  || $fvence < date('Y-m-d', strtotime('-7 years', strtotime($fechaINI))))) {
+    $acaptada = 'ok';
+} else {
+    if (!is_null($cargo_admin)) {
+        $acaptada = 'cargo administrativo';}
+    else {
+    if ($fvence >$fechaINI) {
+        $acaptada = 'sabatico vigente';
+        $fecha_vencimiento = new DateTime($fvence);
+        $fecha_actual = new DateTime($fecha_resultado);
+
+        // Calcula la diferencia entre las fechas
+        $diferencia = $fecha_vencimiento->diff($fecha_actual);
+
+        // Obtiene la diferencia en años
+        $años = $diferencia->y;
+         $años_faltantes = 7 + $años;   
+        
+        
+        // Sumar 10 años a la fecha de vencimiento
+        $fecha_cumplimiento = $fecha_vencimiento->modify('+7 years');
+
+        // Mostrar la fecha de cumplimiento
+        $fecha_cumpf= $fecha_cumplimiento->format('Y-m-d');
+    }
+
+    else
+        {
+    $acaptada = 'sabatico reciente';
+   
+    
+    $fecha_vencimiento = new DateTime($fvence);
+    $fecha_actual = new DateTime($hoy);
+
+    // Calcula la diferencia entre las fechas
+    $diferencia = $fecha_vencimiento->diff($fecha_actual);
+
+    // Obtiene la diferencia en años
+    $años = $diferencia->y;
+     $años_faltantes = 7 - $años;  
+        
+        // Sumar 7años a la fecha de vencimiento
+        $fecha_cumplimiento = $fecha_vencimiento->modify('+7 years');
+
+        // Mostrar la fecha de cumplimiento
+        $fecha_cumpf= $fecha_cumplimiento->format('Y-m-d');
+    
+
+    }
+        }
+}
+}else { //si es COMISION DE ESTUDIOS LA SOLICIUTD
+if ($cargo_admin == null &( $fvence == null  || $fvence < date('Y-m-d', strtotime('-10 years', strtotime($fechaINI))))) {
+    $acaptada = 'ok';
+} else {
+    if (!is_null($cargo_admin)) {
+        $acaptada = 'cargo administrativo';}
+    else {
+    if ($fvence >$fechaINI) {
+          $acaptada = 'Comisión de estudios vigente';
+         $fecha_vencimiento = new DateTime($fvence);
+        $fecha_inicio = new DateTime($fechaINI);
+        // Calcula la diferencia en años entre $fechaINI y $fvence
+        $diferencia = $fecha_vencimiento->diff($fecha_inicio);
+        $años_faltantes = $diferencia->y + 10;
+        
+ 
+
+        // Sumar 10 años a la fecha de vencimiento
+        $fecha_cumplimiento = $fecha_vencimiento->modify('+10 years');
+
+        // Mostrar la fecha de cumplimiento
+        $fecha_cumpf= $fecha_cumplimiento->format('Y-m-d');
+        
+            }
+    else
+        {
+    $acaptada = 'comisión de estudios reciente';
+   
+    
+    $fecha_vencimiento = new DateTime($fvence);
+    $fecha_actual = new DateTime($hoy);
+
+    // Calcula la diferencia entre las fechas
+    $diferencia = $fecha_vencimiento->diff($fecha_actual);
+
+    // Obtiene la diferencia en años
+    $años = $diferencia->y;
+     $años_faltantes = 10 - $años;   
+        
+        // Sumar 10 años a la fecha de vencimiento
+        $fecha_cumplimiento = $fecha_vencimiento->modify('+10 years');
+
+        // Mostrar la fecha de cumplimiento
+        $fecha_cumpf= $fecha_cumplimiento->format('Y-m-d');
+    }
+
+    }
+    
+}
+}
+ // Mostrar el estado de aceptación
+if ($acaptada == 'ok') {
+    $reintegrado = 0;
+    $sql = "INSERT INTO comisionado (documento, fk_depto, tipo_estudio, duracion_meses, dedicacion, unversidad, denominacion_prog, nombre_trabajo, estado, observacion, fechaINI, vence,vigencia,periodo,reintegrado) 
+            VALUES ('$profesor', '$depto','$comision', '$duracion', '$dedicacion', '$universidad', '$denominacion_programa', '$nombre_trabajo','ACTIVO', '$observacion', '$fechaINI','$fecha_resultado','$vigencia','$periodo','$reintegrado')";
+   /* echo "Consulta a ejecutar: $sql<br>";*/
+
+    if ($conn->query($sql) === TRUE) {
+        $factcupos--;$deptcupos--; 
+        if($factcupos<0){$facsobre = "(sobrecupo)";}else {$facsobre = "(ok)";}
+        if($deptcupos<0){$depsobre = "(sobrecupo)";}else {$depsobre = "(ok)";}
+        
+echo "<script>alert('Resolución creada exitosamente;$acaptada cupos facultad $factnombre $factcupos $facsobre, cupos departamento:$deptnombre  $deptcupos $depsobre'); window.history.back();</script>";
+
+    } else {
+        echo "<script>alert('Error al crear la resolución: " . $conn->error . "'); window.location.href = 'index.php';</script>";
+    }
+} else {
+    echo "<script>alert('El profesor tiene " . $acaptada . " #" . $resolini . " con fecha de vencimiento: " . $fvence . " Espere " . $años_faltantes . " años (aprox) hasta el " . $fecha_cumpf . "'); window.location.href = 'index.php';</script>";
+}
+
+    
+// Cerrar conexión
+$conn->close();
+?>

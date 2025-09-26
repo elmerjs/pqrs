@@ -6,27 +6,39 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h1>Tablero de Control</h1>
-     {% if es_coordinador %}
-        <a href="{% url 'crear_pqrs' %}" class="btn btn-primary btn-lg">+ Registrar Nueva PQRS</a>
-    {% endif %}
+    <div>
+        <a href="{% url 'exportar_excel' %}?{{ request.GET.urlencode }}" class="btn btn-success">
+            <i class="fas fa-file-excel"></i> Exportar a Excel
+        </a>
+        
+        {% if es_coordinador %}
+            <a href="{% url 'crear_pqrs' %}" class="btn btn-primary">+ Registrar Nueva PQRS</a>
+            
+            <a href="{% url 'crear_pqrs_desde_pdf' %}" class="btn btn-info">
+                <i class="fas fa-robot"></i> Crear desde PDF
+            </a>
+        {% endif %}
+    </div>
 </div>
 
 <div class="row mb-4">
-    <div class="col-md-3">
-        <div class="card text-center text-white bg-primary">
-            <div class="card-body">
-                <h1 class="card-title">{{ total_pqrs }}</h1>
-                <p class="card-text">PQRS Totales</p>
-            </div>
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="stat-card text-center p-3">
+<div class="stat-number text-dark">{{ total_pqrs }}</div>
+            <div class="stat-label">PQRS Totales</div>
         </div>
     </div>
     {% for item in conteo_por_estado %}
-        <div class="col-md-2">
-            <div class="card text-center">
-                <div class="card-body">
-                    <h1 class="card-title">{{ item.total }}</h1>
-                    <p class="card-text">{{ item.estado }}</p>
-                </div>
+        <div class="col-lg-2 col-md-6 mb-4">
+            <div class="stat-card text-center p-3">
+                <div class="stat-number 
+                    {% if item.estado == 'Resuelto' %}text-success
+                    {% elif item.estado == 'Anulado' %}text-danger
+                    {% elif item.estado == 'En Trámite' %}text-primary
+                    {% elif item.estado == 'Recibido' %}text-warning
+                    {% endif %}
+                ">{{ item.total }}</div>
+                <div class="stat-label">{{ item.estado }}</div>
             </div>
         </div>
     {% endfor %}
@@ -39,20 +51,20 @@
                 {{ filter_form.q|as_crispy_field }}
             </div>
             <div class="col-md-2">
-                {{ filter_form.vigencia|as_crispy_field }} </div>
+                {{ filter_form.vigencia|as_crispy_field }}
+            </div>
             <div class="col-md-2">
                 {{ filter_form.responsable|as_crispy_field }}
             </div>
             <div class="col-md-2">
                 {{ filter_form.estado|as_crispy_field }}
             </div>
-            <div class="col-md-2 d-grid">
-                <button type="submit" class="btn btn-secondary">Filtrar</button>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-secondary w-100">Filtrar</button>
             </div>
         </form>
     </div>
 </div>
-
 <div class="card">
     <div class="card-header">
         <h3>Listado de PQRS</h3>
@@ -72,11 +84,30 @@
             <tbody>
                 {% for pqrs in lista_pqrs %}
                     <tr>
-                        <td><a href="{% url 'editar_pqrs' pqrs.id %}">{{ pqrs.radicado }}</a></td>
-                        <td>{{ pqrs.asunto }}</td>
-                        <td>{{ pqrs.responsable.first_name }} {{ pqrs.responsable.last_name }}</td>
-                        <td>{{ pqrs.fecha_vencimiento }}</td>
-                        <td>{{ pqrs.estado }}</td>
+                <td>
+                    <a href="{% url 'detalle_pqrs' pqrs.id %}">{{ pqrs.radicado }}</a>
+                </td>                        <td>{{ pqrs.asunto }}</td>
+                <td>
+                    {% if pqrs.responsable %}
+                        {{ pqrs.responsable.get_full_name }}
+                    {% else %}
+                        {% if es_coordinador %}
+                            <form action="{% url 'asignar_abogado' pqrs.id %}" method="POST" class="d-flex">
+                                {% csrf_token %}
+                                <select name="responsable_id" class="form-select form-select-sm me-2">
+                                    <option value="">Seleccionar...</option>
+                                    {% for abogado in lista_abogados %}
+                                        <option value="{{ abogado.id }}">{{ abogado.get_full_name }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="submit" class="btn btn-primary btn-sm">Asignar</button>
+                            </form>
+                        {% else %}
+                            <span class="text-muted">No asignado</span>
+                        {% endif %}
+                    {% endif %}
+                </td>                        <td>{{ pqrs.fecha_vencimiento }}</td>
+                                        <td>{{ pqrs.estado }}</td>
                         <td>
                             {% if pqrs.estado_tiempo == "Vencido" %}
                                 <span class="badge bg-danger">Vencido</span>

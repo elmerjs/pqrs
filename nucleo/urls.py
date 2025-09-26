@@ -4,7 +4,15 @@ from . import views
 
 urlpatterns = [
     path('', views.dashboard, name='dashboard'),
+    path('pqrs/crear-desde-pdf/', views.crear_pqrs_desde_pdf, name='crear_pqrs_desde_pdf'),
     path('pqrs/nueva/', views.crear_pqrs, name='crear_pqrs'), # <-- AÑADE ESTA LÍNEA
+     path('pqrs/<int:pqrs_id>/', views.detalle_pqrs, name='detalle_pqrs'),
+
     path('pqrs/<int:pqrs_id>/editar/', views.editar_pqrs, name='editar_pqrs'),
+    path('pqrs/exportar/', views.exportar_excel, name='exportar_excel'),
+    path('pqrs/<int:pqrs_id>/pdf/', views.generar_pdf, name='generar_pdf'),
+    path('pqrs/<int:pqrs_id>/enviar-respuesta/', views.enviar_respuesta_email, name='enviar_respuesta_email'),
+    path('pqrs/<int:pqrs_id>/asignar/', views.asignar_abogado, name='asignar_abogado'),
 
 ]
+
