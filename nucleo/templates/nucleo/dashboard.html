@@ -86,7 +86,14 @@
                     <tr>
                 <td>
                     <a href="{% url 'detalle_pqrs' pqrs.id %}">{{ pqrs.radicado }}</a>
-                </td>                        <td>{{ pqrs.asunto }}</td>
+                </td>                       
+                <td title="{{ pqrs.asunto }}">
+    {{ pqrs.asunto|truncatechars:45 }}
+    <br>
+    <small class="text-muted">
+        <i class="fas fa-user"></i> {{ pqrs.peticionario_nombre }}
+    </small>
+</td>
                 <td>
                     {% if pqrs.responsable %}
                         {{ pqrs.responsable.get_full_name }}

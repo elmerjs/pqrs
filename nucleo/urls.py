@@ -7,6 +7,7 @@ urlpatterns = [
     path('pqrs/crear-desde-pdf/', views.crear_pqrs_desde_pdf, name='crear_pqrs_desde_pdf'),
     path('pqrs/nueva/', views.crear_pqrs, name='crear_pqrs'), # <-- AÑADE ESTA LÍNEA
      path('pqrs/<int:pqrs_id>/', views.detalle_pqrs, name='detalle_pqrs'),
+    path('adjunto/<int:adjunto_id>/eliminar/', views.eliminar_adjunto, name='eliminar_adjunto'),
 
     path('pqrs/<int:pqrs_id>/editar/', views.editar_pqrs, name='editar_pqrs'),
     path('pqrs/exportar/', views.exportar_excel, name='exportar_excel'),

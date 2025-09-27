@@ -1,3 +1,4 @@
+import fitz  # PyMuPDF
 from PIL import Image
 
 from pdf2image import convert_from_bytes
@@ -11,6 +12,7 @@ from skimage.transform import rotate
 # nucleo/views.py
 import base64
 import openpyxl
+import cv2
 
 
 
@@ -24,13 +26,14 @@ from django.db.models import Count, Q
 from django.template.loader import render_to_string
 from django.core.mail import EmailMessage
 from django.contrib import messages
+
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib.staticfiles.storage import staticfiles_storage
 from xhtml2pdf import pisa
 from openpyxl.utils import get_column_letter
 
-from .models import Pqrs, ArchivoAdjunto
+from .models import Pqrs, ArchivoAdjunto, CalidadPeticionario, TipoTramite, ArchivoAdjunto
 from .forms import PqrsForm, PqrsFilterForm, AbogadoPqrsForm, ArchivoAdjuntoForm, PdfUploadForm
 
 # --- Funciones de Ayuda ---
@@ -38,7 +41,17 @@ from .forms import PqrsForm, PqrsFilterForm, AbogadoPqrsForm, ArchivoAdjuntoForm
 def es_coordinador(user):
     return user.groups.filter(name='Coordinadores').exists()
 
+def es_coordinador_o_abogado(user):
+    """
+    Verifica si un usuario pertenece al grupo 'Coordinadores' O 'Abogados'.
+    """
+    return user.groups.filter(name__in=['Coordinadores', 'Abogados']).exists()
 # --- Vistas Principales ---
+# nucleo/views.py
+
+def puede_gestionar_respuesta(user):
+    """Verifica si un usuario es Coordinador O Abogado."""
+    return user.groups.filter(name__in=['Coordinadores', 'Abogados']).exists()
 
 @login_required
 def dashboard(request):
@@ -92,12 +105,6 @@ def dashboard(request):
 # nucleo/views.py
 # nucleo/views.py
 
-# nucleo/views.py
-
-# nucleo/views.py
-
-# nucleo/views.py
-
 @login_required
 @user_passes_test(es_coordinador)
 def crear_pqrs_desde_pdf(request):
@@ -110,7 +117,7 @@ def crear_pqrs_desde_pdf(request):
         if form.is_valid():
             pdf_file = request.FILES['pdf_file']
             try:
-                # 1. Leer texto con OCR y enderezar imagen (sin cambios)
+                # 1. Leer texto con OCR y enderezar imagen
                 imagenes = convert_from_bytes(pdf_file.read(), poppler_path=path_a_poppler)
                 texto_completo = ""
                 for imagen_original in imagenes:
@@ -120,7 +127,7 @@ def crear_pqrs_desde_pdf(request):
                     imagen_corregida_pil = Image.fromarray(imagen_corregida_array.astype(np.uint8))
                     texto_completo += pytesseract.image_to_string(imagen_corregida_pil, lang='spa') + "\n"
 
-                # 2. Extracción de datos básicos (sin cambios)
+                # 2. Extracción de datos básicos
                 radicado_extraido, asunto_extraido, peticionario_extraido, email_extraido = "", "", "", ""
                 match_radicado = re.search(r"VU\s*(\d+)", texto_completo, re.IGNORECASE)
                 if match_radicado: radicado_extraido = "VU-" + match_radicado.group(1).strip()
@@ -130,38 +137,83 @@ def crear_pqrs_desde_pdf(request):
                     match_peticionario = re.search(r"([A-ZÁÉÍÓÚÑ]{2,}\s[A-ZÁÉÍÓÚÑ\s,]+[A-ZÁÉÍÓÚÑ])", asunto_extraido)
                     if match_peticionario: peticionario_extraido = match_peticionario.group(1).strip().rstrip(',')
 
-                # --- 3. ¡VERSIÓN FINAL DE BÚSQUEDA DE EMAIL - TU LÓGICA! ---
+                # 3. Búsqueda de email por capas (Tu versión estable)
                 if peticionario_extraido:
-                    # Obtenemos las partes del nombre para una búsqueda flexible
-                    nombres_peticionario = peticionario_extraido.lower().split()
-                    # Dividimos el texto completo en líneas para analizarlo
-                    lineas = texto_completo.splitlines()
-                    
-                    # Recorremos cada línea del documento
-                    for linea in lineas:
-                        linea_limpia = linea.strip().lower()
-                        # Si la línea es un encabezado de remitente ("De:")
-                        if linea_limpia.startswith('de:'):
-                            # Y si contiene al menos uno de los nombres del peticionario
-                            if any(nombre in linea_limpia for nombre in nombres_peticionario):
-                                # Buscamos un email dentro de < > en esa línea, tolerando errores de OCR
-                                email_match = re.search(r'<([\w\.-]+(?:@|Y|\(d|\(M)[\w\.-]+)>', linea)
+                    match_etiqueta = re.search(r"Correo electrónico:\s*(.+)", texto_completo, re.IGNORECASE)
+                    if match_etiqueta:
+                        email_extraido = match_etiqueta.group(1).strip().splitlines()[0].replace(" ", "")
+                    if not email_extraido:
+                        patron_email_flexible = r'[\w\.-]+(?:@|Q|Y|\(d|\(M|W)[\w\.-]+'
+                        correos_a_ignorar = ['rectoria@', 'quejasreclamos@', 'viceacad@', 'vri@', 'secgral@']
+                        nombres_peticionario = peticionario_extraido.lower().split()
+                        lineas = texto_completo.splitlines()
+                        for i, linea in enumerate(lineas):
+                            linea_limpia = linea.strip().lower()
+                            if linea_limpia.startswith('de:') and any(nombre in linea_limpia for nombre in nombres_peticionario):
+                                contexto_busqueda = "".join(lineas[i:i+4])
+                                email_match = re.search(patron_email_flexible, contexto_busqueda)
                                 if email_match:
-                                    # Corregimos el email y lo guardamos
-                                    email_encontrado = email_match.group(1)
-                                    email_extraido = re.sub(r'(?:Y|\(d|\(M)', '@', email_encontrado)
-                                    break # ¡Encontrado! Dejamos de buscar.
+                                    email_encontrado = email_match.group(0)
+                                    if not any(ignorado in email_encontrado for ignorado in correos_a_ignorar):
+                                        email_extraido = email_encontrado
+                                        break
+                
+                # --- ¡NUEVA LÓGICA DE CLASIFICACIÓN DE PETICIONARIO! ---
+                calidad_peticionario_id = None
+                # Asignamos el valor por defecto desde el principio
+                calidad_peticionario_detectada = "Externo / Particular" 
 
-                # 4. Guardar en la sesión
+                diccionario_calidad = {
+                    'Estudiante': ['estudiante', 'alumno', 'judicatura'],
+                    'Profesor': ['profesor', 'docente'],
+                    'Egresado': ['egresado', 'exalumno'],
+                    'Directivo': ['directivo', 'rector', 'vicerrector', 'jefe', 'secretaria general', 'sintraunicol', 'sindicato', 'aspu'],
+                    'Funcionario': ['funcionario', 'profesional universitario', 'tecnico administrativo', 'empleado', 'contratista'],
+                    'Entidad Gubernamental': ['representante a la camara', 'ministro', 'ministerio', 'consejal', 'senador', 'congresista', 'juzgado', 'tribunal'],
+                    'Externo / Particular': ['madre', 'padre', 'representante legal', 'particular']
+                }
+                
+                texto_a_buscar = asunto_extraido.lower() if asunto_extraido else texto_completo.lower()
+                
+                for calidad, palabras_clave in diccionario_calidad.items():
+                    if any(palabra in texto_a_buscar for palabra in palabras_clave):
+                        calidad_peticionario_detectada = calidad
+                        break 
+                
+                try:
+                    calidad_obj = CalidadPeticionario.objects.get(tipo=calidad_peticionario_detectada)
+                    calidad_peticionario_id = calidad_obj.id
+                except CalidadPeticionario.DoesNotExist:
+                    # Si la categoría detectada no existe, intentamos con el default
+                    try:
+                        calidad_obj = CalidadPeticionario.objects.get(tipo="Externo / Particular")
+                        calidad_peticionario_id = calidad_obj.id
+                    except CalidadPeticionario.DoesNotExist:
+                        calidad_peticionario_id = None
+                # --- FIN DE LA NUEVA LÓGICA ---
+
+                # 4. Limpieza y Reconstrucción final del Email
+                if email_extraido:
+                    email_extraido = re.sub(r'(Q|Y|\(d|\(M|W)', '@', email_extraido)
+                    if '@' not in email_extraido:
+                        match_dominio = re.search(r'(unicauca\.edu\.co|gmail\.com|hotmail\.com)', email_extraido, re.IGNORECASE)
+                        if match_dominio:
+                            pos = match_dominio.start()
+                            usuario = email_extraido[:pos]
+                            dominio = email_extraido[pos:]
+                            email_extraido = f"{usuario}@{dominio}"
+
+                # 5. Guardar en la sesión
                 request.session['radicado_desde_pdf'] = radicado_extraido
                 request.session['asunto_desde_pdf'] = asunto_extraido
                 request.session['peticionario_desde_pdf'] = peticionario_extraido
                 request.session['email_desde_pdf'] = email_extraido
-                
+                request.session['calidad_peticionario_id_desde_pdf'] = calidad_peticionario_id
+
                 return redirect('crear_pqrs')
 
             except Exception as e:
-                messages.error(request, f"Error al procesar el PDF con OCR: {e}")
+                messages.error(request, f"Error al procesar el PDF: {e}")
                 return redirect('crear_pqrs_desde_pdf')
     else:
         form = PdfUploadForm()
@@ -172,16 +224,17 @@ def crear_pqrs_desde_pdf(request):
 @login_required
 @user_passes_test(es_coordinador)
 def crear_pqrs(request):
-    # Preparamos el diccionario para los datos iniciales
     initial_data = {}
     
-    # Revisamos la sesión para TODOS los campos que pudimos haber extraído
     if 'radicado_desde_pdf' in request.session: initial_data['radicado'] = request.session.pop('radicado_desde_pdf')
     if 'asunto_desde_pdf' in request.session: initial_data['asunto'] = request.session.pop('asunto_desde_pdf')
     if 'peticionario_desde_pdf' in request.session: initial_data['peticionario_nombre'] = request.session.pop('peticionario_desde_pdf')
-    if 'email_desde_pdf' in request.session: initial_data['peticionario_email'] = request.session.pop('email_desde_pdf') # <-- NUEVO
+    if 'email_desde_pdf' in request.session: initial_data['peticionario_email'] = request.session.pop('email_desde_pdf')
+    
+    # --- ¡LÍNEA PARA LA CALIDAD DEL PETICIONARIO! ---
+    if 'calidad_peticionario_id_desde_pdf' in request.session:
+        initial_data['calidad_peticionario'] = request.session.pop('calidad_peticionario_id_desde_pdf')
 
-    # El resto de la vista funciona igual
     if request.method == 'POST':
         form = PqrsForm(request.POST)
         if form.is_valid():
@@ -246,6 +299,9 @@ def detalle_pqrs(request, pqrs_id):
         'pqrs': pqrs,
         'adjuntos': adjuntos,
         'form_adjuntos': form_adjuntos,
+         'puede_gestionar': puede_gestionar_respuesta(request.user) # <-- AÑADE ESTA LÍNEA
+
+
     }
     return render(request, 'nucleo/detalle_pqrs.html', contexto)
 
@@ -268,7 +324,7 @@ def asignar_abogado(request, pqrs_id):
     return redirect('dashboard')
 
 @login_required
-@user_passes_test(es_coordinador)
+@user_passes_test(es_coordinador_o_abogado)
 def enviar_respuesta_email(request, pqrs_id):
     pqrs = get_object_or_404(Pqrs, pk=pqrs_id)
 
@@ -314,7 +370,7 @@ def enviar_respuesta_email(request, pqrs_id):
         return redirect('detalle_pqrs', pqrs_id=pqrs.id)
 
 @login_required
-@user_passes_test(es_coordinador)
+@user_passes_test(es_coordinador_o_abogado)
 def generar_pdf(request, pqrs_id):
     pqrs = get_object_or_404(Pqrs, pk=pqrs_id)
     
@@ -397,3 +453,19 @@ def exportar_excel(request):
     
     wb.save(response)
     return response
+@login_required
+@user_passes_test(es_coordinador_o_abogado) # Usamos el permiso que ya creamos
+def eliminar_adjunto(request, adjunto_id):
+    # Buscamos el archivo adjunto específico por su ID
+    adjunto = get_object_or_404(ArchivoAdjunto, id=adjunto_id)
+    pqrs_id = adjunto.pqrs.id # Guardamos el ID de la PQRS para poder regresar
+
+    if request.method == 'POST':
+        # Borra el archivo del almacenamiento
+        adjunto.archivo.delete()
+        # Borra el registro de la base de datos
+        adjunto.delete()
+        messages.success(request, 'Archivo adjunto eliminado exitosamente.')
+    
+    # Redirigimos al usuario de vuelta a la página de detalles de la PQRS
+    return redirect('detalle_pqrs', pqrs_id=pqrs_id)
