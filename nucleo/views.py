@@ -1,3 +1,5 @@
+import os # <-- ¡AÑADE ESTA LÍNEA!
+
 import fitz  # PyMuPDF
 from PIL import Image
 
@@ -14,11 +16,10 @@ import base64
 import openpyxl
 import cv2
 
-
-
+from django.core.files import File # <-- ¡AÑADE ESTA LÍNEA!
+from datetime import datetime
 from io import BytesIO
 from datetime import date
-
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.http import HttpResponse, HttpResponseForbidden
@@ -32,9 +33,10 @@ from django.contrib.auth.models import User
 from django.contrib.staticfiles.storage import staticfiles_storage
 from xhtml2pdf import pisa
 from openpyxl.utils import get_column_letter
-
-from .models import Pqrs, ArchivoAdjunto, CalidadPeticionario, TipoTramite, ArchivoAdjunto
-from .forms import PqrsForm, PqrsFilterForm, AbogadoPqrsForm, ArchivoAdjuntoForm, PdfUploadForm
+from .models import Pqrs, ArchivoAdjunto, CalidadPeticionario, TipoTramite, ArchivoAdjunto, Seguimiento 
+from .forms import PqrsForm, PqrsFilterForm, AbogadoPqrsForm, ArchivoAdjuntoForm, PdfUploadForm, SeguimientoForm, RespuestaTramiteForm
+from .forms import TrasladoPqrsForm # Asegúrate de importar el nuevo formulario
+from django.core.files.storage import FileSystemStorage
 
 # --- Funciones de Ayuda ---
 
@@ -104,7 +106,6 @@ def dashboard(request):
 
 # nucleo/views.py
 # nucleo/views.py
-
 @login_required
 @user_passes_test(es_coordinador)
 def crear_pqrs_desde_pdf(request):
@@ -116,7 +117,14 @@ def crear_pqrs_desde_pdf(request):
         form = PdfUploadForm(request.POST, request.FILES)
         if form.is_valid():
             pdf_file = request.FILES['pdf_file']
+
+            # --- ¡NUEVO BLOQUE! Guardar PDF temporalmente ---
+            fs = FileSystemStorage(location=os.path.join(settings.MEDIA_ROOT, 'tmp'))
+            nombre_archivo_temporal = fs.save(pdf_file.name, pdf_file)
+            request.session['pdf_original_temporal'] = nombre_archivo_temporal
+            # --- FIN DEL NUEVO BLOQUE ---
             try:
+                pdf_file.seek(0) # <-- Pequeño ajuste para la lectura OCR
                 # 1. Leer texto con OCR y enderezar imagen
                 imagenes = convert_from_bytes(pdf_file.read(), poppler_path=path_a_poppler)
                 texto_completo = ""
@@ -126,16 +134,84 @@ def crear_pqrs_desde_pdf(request):
                     imagen_corregida_array = rotate(np.array(imagen_original), angulo, resize=True) * 255
                     imagen_corregida_pil = Image.fromarray(imagen_corregida_array.astype(np.uint8))
                     texto_completo += pytesseract.image_to_string(imagen_corregida_pil, lang='spa') + "\n"
+                
+                # --- INICIO DE DIAGNÓSTICO ---
+                print("\n\n===================================")
+                print("INICIO DE TEXTO CRUDO EXTRAÍDO CON OCR")
+                print("===================================")
+                print(texto_completo)
+                print("===================================")
+                print("FIN DE TEXTO CRUDO EXTRAÍDO CON OCR")
+                print("===================================\n\n")
+                # --- FIN DE DIAGNÓSTICO ---
 
                 # 2. Extracción de datos básicos
                 radicado_extraido, asunto_extraido, peticionario_extraido, email_extraido = "", "", "", ""
                 match_radicado = re.search(r"VU\s*(\d+)", texto_completo, re.IGNORECASE)
                 if match_radicado: radicado_extraido = "VU-" + match_radicado.group(1).strip()
+                
                 match_asunto = re.search(r"Cordial saludo,([\s\S]+?)(?=Por lo anterior|Es preciso)", texto_completo, re.IGNORECASE)
                 if match_asunto: asunto_extraido = " ".join(match_asunto.group(1).strip().split())
+                
                 if asunto_extraido:
                     match_peticionario = re.search(r"([A-ZÁÉÍÓÚÑ]{2,}\s[A-ZÁÉÍÓÚÑ\s,]+[A-ZÁÉÍÓÚÑ])", asunto_extraido)
                     if match_peticionario: peticionario_extraido = match_peticionario.group(1).strip().rstrip(',')
+                    # --- ¡NUEVO BLOQUE! Extracción de Fecha de Recepción ---
+                    # --- ¡NUEVO BLOQUE! Extracción de Fecha de Recepción ---
+                    # --- ¡NUEVO BLOQUE! Extracción de Fecha de Recepción (CON DIAGNÓSTICO) ---
+                    fecha_recepcion_extraida = None
+                    # Diccionario para convertir meses en español a números
+                    meses_es = {
+                        'ene': 1, 'feb': 2, 'mar': 3, 'abr': 4, 'may': 5, 'jun': 6,
+                        'jul': 7, 'ago': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dic': 12
+                    }
+
+                    print("\n--- INICIANDO BÚSQUEDA DE FECHA DE RECEPCIÓN ---")
+                    # 1. Buscamos la línea que contiene "Date:"
+                    for linea in texto_completo.splitlines():
+                        if 'date:' in linea.lower():
+                            # LOG 1: Hemos encontrado una línea candidata
+                            print(f"  [LOG 1] LÍNEA CANDIDATA ENCONTRADA: '{linea.strip()}'")
+                            
+                            # 2. Una vez encontrada, extraemos la fecha de ESA línea
+                            match_fecha = re.search(r"(\d{1,2})(?:\s+de)?\s+([a-z]{3,})(?:\s+de)?\s+(\d{4})", linea, re.IGNORECASE)
+                            
+                            if match_fecha:
+                                # LOG 2: La regla de búsqueda (regex) tuvo éxito
+                                print(f"    [LOG 2] ÉXITO EN REGEX. Grupos capturados: {match_fecha.groups()}")
+                                try:
+                                    dia = int(match_fecha.group(1))
+                                    mes_str = match_fecha.group(2).lower()[:3]
+                                    ano = int(match_fecha.group(3))
+                                    
+                                    if mes_str in meses_es:
+                                        mes = meses_es[mes_str]
+                                        fecha_recepcion_extraida = datetime(ano, mes, dia).strftime('%Y-%m-%d')
+                                        # LOG 3: La fecha se procesó correctamente
+                                        print(f"      [LOG 3] FECHA PROCESADA CORRECTAMENTE: {fecha_recepcion_extraida}")
+                                        break # Detenemos la búsqueda
+                                    else:
+                                        # LOG 4 (Error): El mes no se encontró en el diccionario
+                                        print(f"      [LOG 4] ERROR: El mes '{mes_str}' no se encontró en el diccionario.")
+                                except (ValueError, IndexError) as e:
+                                    # LOG 5 (Error): Hubo un error al procesar los grupos
+                                    print(f"      [LOG 5] ERROR al procesar los grupos: {e}")
+                            else:
+                                # LOG 6 (Error): La regla de búsqueda (regex) falló en esta línea
+                                print(f"    [LOG 6] FALLO EN REGEX: No se encontró el patrón de fecha en esta línea.")
+
+                    if not fecha_recepcion_extraida:
+                        print("--- BÚSQUEDA FINALIZADA: No se pudo extraer la fecha de recepción. ---\n")
+                    # --- FIN DEL NUEVO BLOQUE ---
+                    # --- FIN DEL NUEVO BLOQUE ---
+
+                # --- ¡NUEVO BLOQUE SEGURO! Añade la fecha de vencimiento si la encuentra ---
+                match_vencimiento = re.search(r"(vence el d[ií]a,[\s\S]+?\d{4})", texto_completo, re.IGNORECASE)
+                if match_vencimiento:
+                    texto_vencimiento = " ".join(match_vencimiento.group(1).strip().split())
+                    if asunto_extraido:
+                        asunto_extraido += f" (ATENCIÓN: {texto_vencimiento})"
+                # --- FIN DEL NUEVO BLOQUE ---
 
                 # 3. Búsqueda de email por capas (Tu versión estable)
                 if peticionario_extraido:
@@ -158,9 +234,8 @@ def crear_pqrs_desde_pdf(request):
                                         email_extraido = email_encontrado
                                         break
                 
-                # --- ¡NUEVA LÓGICA DE CLASIFICACIÓN DE PETICIONARIO! ---
+                # --- LÓGICA DE CLASIFICACIÓN DE PETICIONARIO ---
                 calidad_peticionario_id = None
-                # Asignamos el valor por defecto desde el principio
                 calidad_peticionario_detectada = "Externo / Particular" 
 
                 diccionario_calidad = {
@@ -184,13 +259,11 @@ def crear_pqrs_desde_pdf(request):
                     calidad_obj = CalidadPeticionario.objects.get(tipo=calidad_peticionario_detectada)
                     calidad_peticionario_id = calidad_obj.id
                 except CalidadPeticionario.DoesNotExist:
-                    # Si la categoría detectada no existe, intentamos con el default
                     try:
                         calidad_obj = CalidadPeticionario.objects.get(tipo="Externo / Particular")
                         calidad_peticionario_id = calidad_obj.id
                     except CalidadPeticionario.DoesNotExist:
                         calidad_peticionario_id = None
-                # --- FIN DE LA NUEVA LÓGICA ---
 
                 # 4. Limpieza y Reconstrucción final del Email
                 if email_extraido:
@@ -209,14 +282,21 @@ def crear_pqrs_desde_pdf(request):
                 request.session['peticionario_desde_pdf'] = peticionario_extraido
                 request.session['email_desde_pdf'] = email_extraido
                 request.session['calidad_peticionario_id_desde_pdf'] = calidad_peticionario_id
-
+                request.session['fecha_recepcion_desde_pdf'] = fecha_recepcion_extraida
                 return redirect('crear_pqrs')
 
             except Exception as e:
+                 # Si hay un error, borramos el archivo temporal que ya no se usará
+                ruta_temporal_a_borrar = os.path.join(settings.MEDIA_ROOT, 'tmp', nombre_archivo_temporal)
+                if os.path.exists(ruta_temporal_a_borrar):
+                    os.remove(ruta_temporal_a_borrar)
+
                 messages.error(request, f"Error al procesar el PDF: {e}")
+                request.session['fecha_recepcion_desde_pdf'] = fecha_recepcion_extraida
+
                 return redirect('crear_pqrs_desde_pdf')
     else:
-        form = PdfUploadForm()
+                form = PdfUploadForm()
 
     return render(request, 'nucleo/crear_pqrs_desde_pdf.html', {'form': form})
 
@@ -225,20 +305,38 @@ def crear_pqrs_desde_pdf(request):
 @user_passes_test(es_coordinador)
 def crear_pqrs(request):
     initial_data = {}
+    if 'fecha_recepcion_desde_pdf' in request.session:
+        initial_data['fecha_recepcion_inicial'] = request.session.pop('fecha_recepcion_desde_pdf', None)
+    if 'radicado_desde_pdf' in request.session: initial_data['radicado'] = request.session.pop('radicado_desde_pdf', None)
+    if 'asunto_desde_pdf' in request.session: initial_data['asunto'] = request.session.pop('asunto_desde_pdf', None)
+    if 'peticionario_desde_pdf' in request.session: initial_data['peticionario_nombre'] = request.session.pop('peticionario_desde_pdf', None)
+    if 'email_desde_pdf' in request.session: initial_data['peticionario_email'] = request.session.pop('email_desde_pdf', None)
     
-    if 'radicado_desde_pdf' in request.session: initial_data['radicado'] = request.session.pop('radicado_desde_pdf')
-    if 'asunto_desde_pdf' in request.session: initial_data['asunto'] = request.session.pop('asunto_desde_pdf')
-    if 'peticionario_desde_pdf' in request.session: initial_data['peticionario_nombre'] = request.session.pop('peticionario_desde_pdf')
-    if 'email_desde_pdf' in request.session: initial_data['peticionario_email'] = request.session.pop('email_desde_pdf')
-    
-    # --- ¡LÍNEA PARA LA CALIDAD DEL PETICIONARIO! ---
     if 'calidad_peticionario_id_desde_pdf' in request.session:
-        initial_data['calidad_peticionario'] = request.session.pop('calidad_peticionario_id_desde_pdf')
+        initial_data['calidad_peticionario'] = request.session.pop('calidad_peticionario_id_desde_pdf', None)
+    if 'fecha_recepcion_desde_pdf' in request.session:
+            initial_data['fecha_recepcion_inicial'] = request.session.pop('fecha_recepcion_desde_pdf', None)
 
     if request.method == 'POST':
         form = PqrsForm(request.POST)
         if form.is_valid():
-            form.save()
+            # --- ¡AQUÍ ESTÁ LA CORRECCIÓN! ---
+            nueva_pqrs = form.save() # Guardamos la nueva PQRS en una variable
+            
+            # --- El resto de tu bloque para adjuntar el PDF ahora funcionará ---
+            nombre_archivo_temporal = request.session.pop('pdf_original_temporal', None)
+            if nombre_archivo_temporal:
+                ruta_temporal = os.path.join(settings.MEDIA_ROOT, 'tmp', nombre_archivo_temporal)
+                if os.path.exists(ruta_temporal):
+                    with open(ruta_temporal, 'rb') as archivo_pdf:
+                        ArchivoAdjunto.objects.create(
+                            pqrs=nueva_pqrs, # Ahora esta variable sí existe
+                            archivo=File(archivo_pdf, name=nombre_archivo_temporal),
+                            descripcion="Documento PDF original de la solicitud.",
+                            tipo_archivo='Anexo Peticionario'
+                        )
+                    os.remove(ruta_temporal)
+            
             messages.success(request, 'La PQRS ha sido registrada exitosamente.')
             return redirect('dashboard')
     else:
@@ -270,42 +368,97 @@ def editar_pqrs(request, pqrs_id):
     }
     return render(request, 'nucleo/pqrs_form.html', contexto)
 
+# nucleo/views.py
+# nucleo/views.py
 @login_required
 def detalle_pqrs(request, pqrs_id):
     pqrs = get_object_or_404(Pqrs, pk=pqrs_id)
     
+    # --- Lógica de Permisos (tu código, sin cambios) ---
+    es_coord = es_coordinador(request.user)
+    user_es_responsable = (pqrs.responsable == request.user)
+    
+    if not (user_es_responsable or es_coord or request.user.is_superuser):
+        return HttpResponseForbidden("No tienes permiso para ver este caso.")
+
+    user_puede_editar = (user_es_responsable or es_coord or request.user.is_superuser)
+
+    # --- Manejo de Formularios (POST) con la nueva lógica de estados ---
     if request.method == 'POST':
         if not (pqrs.responsable == request.user or es_coordinador(request.user) or request.user.is_superuser):
-            return HttpResponseForbidden("No tienes permiso para añadir archivos a este caso.")
-        
+            return HttpResponseForbidden("No tienes permiso para modificar este caso.")
+
         form_adjuntos = ArchivoAdjuntoForm(request.POST, request.FILES)
-        if form_adjuntos.is_valid():
+        form_seguimiento = SeguimientoForm(request.POST)
+        form_respuesta = RespuestaTramiteForm(request.POST, instance=pqrs)
+
+        # 1. Al SUBIR un adjunto
+        if 'submit_adjunto' in request.POST and form_adjuntos.is_valid():
             nuevo_adjunto = form_adjuntos.save(commit=False)
             nuevo_adjunto.pqrs = pqrs
             nuevo_adjunto.save()
+            
+            # --- CAMBIO DE ESTADO ---
+            if pqrs.estado == 'Recibido':
+                pqrs.estado = 'En Trámite'
+                pqrs.save(update_fields=['estado'])
+            # --- FIN DEL CAMBIO ---
+
             messages.success(request, 'Archivo adjuntado correctamente.')
             return redirect('detalle_pqrs', pqrs_id=pqrs.id)
-    else:
-        form_adjuntos = ArchivoAdjuntoForm()
+        
+        # 2. Al AÑADIR una nota al historial
+        elif 'submit_seguimiento' in request.POST and form_seguimiento.is_valid():
+            nuevo_seguimiento = form_seguimiento.save(commit=False)
+            nuevo_seguimiento.pqrs = pqrs
+            nuevo_seguimiento.autor = request.user
+            nuevo_seguimiento.save()
 
+            # --- CAMBIO DE ESTADO ---
+            if pqrs.estado == 'Recibido':
+                pqrs.estado = 'En Trámite'
+                pqrs.save(update_fields=['estado'])
+            # --- FIN DEL CAMBIO ---
+
+            messages.success(request, 'Se ha añadido una nueva nota al historial.')
+            return redirect('detalle_pqrs', pqrs_id=pqrs.id)
+
+        # 3. Al GUARDAR la respuesta definitiva
+        elif 'submit_respuesta' in request.POST and form_respuesta.is_valid():
+            form_respuesta.save()
+            
+            # --- CAMBIO DE ESTADO ---
+            if pqrs.estado == 'Recibido':
+                pqrs.estado = 'En Trámite'
+                pqrs.save(update_fields=['estado'])
+            # --- FIN DEL CAMBIO ---
+
+            messages.success(request, 'La respuesta definitiva ha sido guardada.')
+            return redirect('detalle_pqrs', pqrs_id=pqrs.id)
+
+    # --- El resto de tu función se mantiene exactamente igual ---
+    form_adjuntos = ArchivoAdjuntoForm()
+    form_seguimiento = SeguimientoForm()
+    form_respuesta = RespuestaTramiteForm(instance=pqrs)
+    form_traslado = TrasladoPqrsForm()
     adjuntos = pqrs.adjuntos.all()
+    seguimientos = pqrs.seguimientos.all()
     
-    es_coord = es_coordinador(request.user)
-    tiene_permiso_ver = (pqrs.responsable == request.user or es_coord or request.user.is_superuser)
-    if not tiene_permiso_ver:
-        return HttpResponseForbidden("No tienes permiso para ver este caso.")
-
     contexto = {
         'pqrs': pqrs,
         'adjuntos': adjuntos,
+        'seguimientos': seguimientos,
         'form_adjuntos': form_adjuntos,
-         'puede_gestionar': puede_gestionar_respuesta(request.user) # <-- AÑADE ESTA LÍNEA
-
-
+        'form_seguimiento': form_seguimiento,
+        'form_respuesta': form_respuesta,
+        'form_traslado': form_traslado,
+        'puede_gestionar': puede_gestionar_respuesta(request.user),
+        'user_puede_editar': user_puede_editar,
     }
+    
     return render(request, 'nucleo/detalle_pqrs.html', contexto)
 
-# --- Vistas de Acciones y Reportes ---
+
 
 @login_required
 @user_passes_test(es_coordinador)
@@ -322,19 +475,19 @@ def asignar_abogado(request, pqrs_id):
         else:
             messages.error(request, 'No se seleccionó un abogado válido.')
     return redirect('dashboard')
-
 @login_required
 @user_passes_test(es_coordinador_o_abogado)
 def enviar_respuesta_email(request, pqrs_id):
     pqrs = get_object_or_404(Pqrs, pk=pqrs_id)
 
     if request.method == 'POST':
+        # --- Lógica de generación de PDF (Tu código original, sin cambios) ---
         def imagen_a_base64(ruta_relativa):
             try:
                 with staticfiles_storage.open(ruta_relativa) as image_file:
                     return f"data:image/png;base64,{base64.b64encode(image_file.read()).decode('utf-8')}"
             except Exception as e:
-                print(f"ERROR: {e}")
+                print(f"ERROR al cargar imagen para PDF: {e}")
                 return None
         
         contexto_pdf = {
@@ -348,6 +501,12 @@ def enviar_respuesta_email(request, pqrs_id):
         pdf_en_memoria = buffer.getvalue()
         buffer.close()
 
+        # --- Tu lógica para manejar adjuntos (sin cambios) ---
+        adjuntos_para_enviar = []
+        ids_adjuntos_seleccionados = request.POST.getlist('adjuntos_a_enviar')
+        if ids_adjuntos_seleccionados:
+            adjuntos_para_enviar = ArchivoAdjunto.objects.filter(id__in=ids_adjuntos_seleccionados)
+
         try:
             asunto = f"Respuesta a su solicitud con radicado N° {pqrs.radicado}"
             mensaje = f"Estimado(a) {pqrs.peticionario_nombre},\n\nAdjunto encontrará la respuesta formal a su solicitud y los documentos relacionados.\n\nCordialmente,\n\nVicerrectoría Académica\nUniversidad del Cauca"
@@ -357,17 +516,38 @@ def enviar_respuesta_email(request, pqrs_id):
             nombre_archivo_pdf = f"Respuesta_{pqrs.radicado}.pdf"
             email.attach(nombre_archivo_pdf, pdf_en_memoria, 'application/pdf')
 
-            ids_adjuntos_seleccionados = request.POST.getlist('adjuntos_a_enviar')
-            if ids_adjuntos_seleccionados:
-                adjuntos_para_enviar = ArchivoAdjunto.objects.filter(id__in=ids_adjuntos_seleccionados)
-                for adjunto in adjuntos_para_enviar:
-                    email.attach(adjunto.nombre_corto, adjunto.archivo.read(), None)
+            for adjunto in adjuntos_para_enviar:
+                email.attach(adjunto.nombre_corto, adjunto.archivo.read(), None)
             
             email.send()
+            
+            # --- ¡NUEVA LÓGICA DE CAMBIO DE ESTADO! ---
+            # 1. Actualizamos el estado del caso a "Resuelto"
+            pqrs.estado = 'Resuelto'
+            # 2. Registramos la fecha en que se dio la respuesta
+            pqrs.fecha_respuesta = date.today()
+            pqrs.save(update_fields=['estado', 'fecha_respuesta'])
+            # --- FIN DE LA NUEVA LÓGICA ---
+            
+            # --- El registro en el historial se mantiene igual ---
+            nota_automatica = "Se envió la respuesta por correo electrónico al peticionario."
+            nombres_adjuntos = [adj.nombre_corto for adj in adjuntos_para_enviar]
+            if nombres_adjuntos:
+                nota_automatica += " Archivos adjuntos: " + ", ".join(nombres_adjuntos) + "."
+
+            Seguimiento.objects.create(
+                pqrs=pqrs,
+                autor=request.user,
+                nota=nota_automatica
+            )
+            
             messages.success(request, f'El correo para la PQRS {pqrs.radicado} ha sido enviado exitosamente.')
         except Exception as e:
             messages.error(request, f'Ocurrió un error al enviar el correo: {e}')
+        
         return redirect('detalle_pqrs', pqrs_id=pqrs.id)
+
+    return redirect('detalle_pqrs', pqrs_id=pqrs.id) # Redirige si no es POST
 
 @login_required
 @user_passes_test(es_coordinador_o_abogado)
@@ -468,4 +648,82 @@ def eliminar_adjunto(request, adjunto_id):
         messages.success(request, 'Archivo adjunto eliminado exitosamente.')
     
     # Redirigimos al usuario de vuelta a la página de detalles de la PQRS
+    return redirect('detalle_pqrs', pqrs_id=pqrs_id)
+@login_required
+@user_passes_test(es_coordinador)
+def cerrar_pqrs(request, pqrs_id):
+    if request.method == 'POST':
+        pqrs = get_object_or_404(Pqrs, pk=pqrs_id)
+        if not pqrs.fecha_cierre: # Solo cierra si no está ya cerrado
+            pqrs.fecha_cierre = date.today()
+            pqrs.save()
+            # 2. Crea una nota automática para el historial de seguimiento
+            nota_automatica = f"El caso fue cerrado definitivamente por {request.user.get_full_name()}."
+            Seguimiento.objects.create(
+                pqrs=pqrs,
+                autor=request.user,
+                nota=nota_automatica
+            )
+            messages.success(request, f'El caso {pqrs.radicado} ha sido cerrado y archivado exitosamente.')
+    return redirect('detalle_pqrs', pqrs_id=pqrs_id)
+
+@login_required
+@user_passes_test(es_coordinador)
+def reabrir_pqrs(request, pqrs_id):
+    if request.method == 'POST':
+        pqrs = get_object_or_404(Pqrs, pk=pqrs_id)
+        if pqrs.fecha_cierre: # Solo reabre si está cerrado
+            # 1. Quita la fecha de cierre para "reabrir" el caso
+            pqrs.fecha_cierre = None
+            pqrs.save()
+
+            # 2. Crea una nota automática en el historial para la auditoría
+            nota_automatica = f"El caso fue reabierto por {request.user.get_full_name()}."
+            Seguimiento.objects.create(
+                pqrs=pqrs,
+                autor=request.user,
+                nota=nota_automatica
+            )
+
+            messages.success(request, f'El caso {pqrs.radicado} ha sido reabierto exitosamente.')
+    return redirect('detalle_pqrs', pqrs_id=pqrs_id)
+
+@login_required
+@user_passes_test(es_coordinador)
+def trasladar_pqrs(request, pqrs_id):
+    pqrs = get_object_or_404(Pqrs, pk=pqrs_id)
+    if request.method == 'POST':
+        form = TrasladoPqrsForm(request.POST, instance=pqrs)
+        if form.is_valid():
+            pqrs_actualizada = form.save(commit=False)
+            pqrs_actualizada.estado_traslado = 'En Traslado'
+            pqrs_actualizada.save()
+
+            # Crea una nota automática en el historial
+            nota = f"Caso trasladado a '{pqrs_actualizada.dependencia_trasladada}' por competencia. Queda bajo seguimiento."
+            Seguimiento.objects.create(pqrs=pqrs, autor=request.user, nota=nota)
+
+            messages.success(request, f'El caso {pqrs.radicado} ha sido trasladado exitosamente.')
+    return redirect('detalle_pqrs', pqrs_id=pqrs_id)
+
+# nucleo/views.py
+
+@login_required
+@user_passes_test(es_coordinador)
+def deshacer_traslado_pqrs(request, pqrs_id):
+    if request.method == 'POST':
+        pqrs = get_object_or_404(Pqrs, pk=pqrs_id)
+        if pqrs.estado_traslado == 'En Traslado':
+            dependencia_anterior = pqrs.dependencia_trasladada
+            
+            # 1. Revertimos los campos a su estado original
+            pqrs.estado_traslado = 'Activo'
+            pqrs.dependencia_trasladada = None
+            pqrs.save()
+
+            # 2. Creamos una nota automática en el historial para la auditoría
+            nota_automatica = f"Se deshizo el traslado a '{dependencia_anterior}'. El caso vuelve a estar activo en la Vicerrectoría."
+            Seguimiento.objects.create(pqrs=pqrs, autor=request.user, nota=nota_automatica)
+            
+            messages.info(request, f'Se ha deshecho el traslado del caso {pqrs.radicado}.')
     return redirect('detalle_pqrs', pqrs_id=pqrs_id)

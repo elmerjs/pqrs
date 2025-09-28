@@ -1,8 +1,9 @@
 # nucleo/forms.py
 from django import forms
-from .models import Pqrs, User, ArchivoAdjunto
+from .models import Pqrs, User, ArchivoAdjunto, Seguimiento
 from datetime import date
 #from .models import Pqrs, ArchivoAdjunto # <-- Modifica esta línea
+from django.contrib.auth.models import User
 
 class PqrsForm(forms.ModelForm):
     class Meta:
@@ -21,6 +22,9 @@ class PqrsForm(forms.ModelForm):
             'respuesta_tramite': 'Respuesta al Trámite',
         }
         widgets = {
+            'fecha_recepcion_inicial': forms.DateInput(
+                attrs={'type': 'date', 'class': 'form-control'}
+            ),
             'asunto': forms.Textarea(attrs={'rows': 3}),
             'respuesta_tramite': forms.Textarea(attrs={'rows': 5}),
         }
@@ -102,3 +106,52 @@ class PdfUploadForm(forms.Form):
         label="Seleccionar PDF de la queja",
         widget=forms.FileInput(attrs={'class': 'form-control', 'accept': '.pdf'})
     )
+
+    # nucleo/forms.py
+
+# nucleo/forms.py
+
+class SeguimientoForm(forms.ModelForm):
+    class Meta:
+        model = Seguimiento
+        fields = ['nota']
+        widgets = {
+            'nota': forms.Textarea(attrs={
+                'class': 'form-control', # <-- ¡AÑADIMOS ESTA LÍNEA CLAVE!
+                'rows': 2,
+                'placeholder': 'Añadir nueva nota de seguimiento...'
+            }),
+        }
+        labels = {
+            'nota': '' # Ocultamos la etiqueta para un look más limpio
+        }
+
+# nucleo/forms.py
+
+class RespuestaTramiteForm(forms.ModelForm):
+    class Meta:
+        model = Pqrs
+        fields = ['respuesta_tramite']
+        widgets = {
+            'respuesta_tramite': forms.Textarea(attrs={
+             'class': 'form-control', # <-- ¡AÑADE ESTA LÍNEA!
+
+                'rows': 6, 
+                'placeholder': 'Escribe aquí la respuesta final que se enviará al peticionario y se usará para generar el PDF oficial.'
+            }),
+        }
+        labels = {
+            'respuesta_tramite': 'Respuesta Definitiva' # Es mejor mostrar la etiqueta aquí
+        }
+# nucleo/forms.py
+
+class TrasladoPqrsForm(forms.ModelForm):
+    class Meta:
+        model = Pqrs
+        fields = ['dependencia_trasladada']
+        labels = {
+            'dependencia_trasladada': 'Nombre de la Dependencia o Funcionario a quien se traslada'
+        }
+        widgets = {
+            'dependencia_trasladada': forms.TextInput(attrs={'placeholder': 'Ej: DARCA, División Financiera, Dr. ...'})
+        }

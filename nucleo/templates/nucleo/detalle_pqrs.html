@@ -7,14 +7,59 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h1>Detalle de PQRS</h1>
     <div>
-        <a href="{% url 'dashboard' %}" class="btn btn-secondary">‹ Volver al Dashboard</a>
-        {% if pqrs.responsable == user or user.is_superuser or user|groups:"Coordinadores" %}
-            <a href="{% url 'editar_pqrs' pqrs.id %}" class="btn btn-primary">Editar PQRS</a>
-        {% endif %}
+    <a href="{% url 'dashboard' %}" class="btn btn-secondary">‹ Volver al Dashboard</a>
+
+    {% if not pqrs.fecha_cierre and user_puede_editar %}
+        <a href="{% url 'editar_pqrs' pqrs.id %}" class="btn btn-primary">Editar PQRS</a>
+    {% endif %}
+
+{% if user|groups:"Coordinadores" and not pqrs.fecha_cierre %}
+    
+    {% if pqrs.estado_traslado == 'Activo' %}
+    <button type="button" class="btn btn-info" data-bs-toggle="modal" data-bs-target="#trasladoModal">
+        <i class="fas fa-random"></i> Trasladar por Competencia
+    </button>
+    
+    {% elif pqrs.estado_traslado == 'En Traslado' %}
+    <form action="{% url 'deshacer_traslado_pqrs' pqrs.id %}" method="POST" class="d-inline" onsubmit="return confirm('¿Estás seguro de que quieres deshacer el traslado? El caso volverá a estar activo en la Vicerrectoría.');">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-secondary">
+            <i class="fas fa-undo"></i> Deshacer Traslado
+        </button>
+    </form>
+    {% endif %}
+
+{% endif %}
+    {% if user|groups:"Coordinadores" and not pqrs.fecha_cierre and pqrs.estado == 'Resuelto' %}
+        <form action="{% url 'cerrar_pqrs' pqrs.id %}" method="POST" class="d-inline" onsubmit="return confirm('¿Estás seguro de que quieres cerrar este caso?');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-danger"><i class="fas fa-lock"></i> Cerrar Caso</button>
+        </form>
+    {% endif %}
+
+    {% if user|groups:"Coordinadores" and pqrs.fecha_cierre %}
+        <form action="{% url 'reabrir_pqrs' pqrs.id %}" method="POST" class="d-inline" onsubmit="return confirm('¿Estás seguro de que quieres reabrir este caso?');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-warning text-dark">
+                <i class="fas fa-lock-open"></i> Reabrir Caso
+            </button>
+        </form>
+    {% endif %}
     </div>
+    {% if pqrs.estado_traslado == 'En Traslado' %}
+<div class="alert alert-info mt-3" role="alert">
+    <h5 class="alert-heading"><i class="fas fa-info-circle"></i> Caso en Seguimiento Externo</h5>
+    Este caso fue trasladado a <strong>{{ pqrs.dependencia_trasladada }}</strong>. El abogado responsable solo debe hacer seguimiento.
+</div>
+{% endif %}
 </div>
 
 <div class="card">
+     {% if pqrs.fecha_cierre %}
+    <div class="card-header bg-warning text-dark">
+        <h5 class="mb-0"><i class="fas fa-lock"></i> Este caso fue cerrado el {{ pqrs.fecha_cierre }} y ya no puede ser modificado.</h5>
+    </div>
+    {% endif %}
     <div class="card-header d-flex justify-content-between">
         <h4 class="mb-0">Radicado: {{ pqrs.radicado }}</h4>
         <span class="badge 
@@ -25,33 +70,36 @@
         <div class="row">
             <div class="col-md-7">
                 <h5>Asunto</h5>
-                <p class="lead">{{ pqrs.asunto }}</p>
-                <hr>
-                <h5>Respuesta al Trámite</h5>
-                {% if pqrs.respuesta_tramite %}
-                    <p style="white-space: pre-wrap;">{{ pqrs.respuesta_tramite }}</p>
-                {% else %}
-                    <p class="text-muted"><em>Aún no se ha registrado una respuesta.</em></p>
-                {% endif %}
+                <p class="lead" style="white-space: pre-wrap;">{{ pqrs.asunto }}</p>
             </div>
+            
             <div class="col-md-5 bg-light p-3 border rounded">
                 <dl class="row">
                     <dt class="col-sm-5">Estado del Proceso:</dt>
                     <dd class="col-sm-7">{{ pqrs.estado }}</dd>
+
                     <dt class="col-sm-5">Responsable:</dt>
                     <dd class="col-sm-7">{{ pqrs.responsable.get_full_name|default:"No asignado" }}</dd>
+
                     <hr class="my-2">
+
                     <dt class="col-sm-5">Fecha de Recepción:</dt>
                     <dd class="col-sm-7">{{ pqrs.fecha_recepcion_inicial }}</dd>
+
                     <dt class="col-sm-5">Fecha de Vencimiento:</dt>
                     <dd class="col-sm-7">{{ pqrs.fecha_vencimiento }}</dd>
+
                     <dt class="col-sm-5">Fecha de Respuesta:</dt>
                     <dd class="col-sm-7">{{ pqrs.fecha_respuesta|default:"--" }}</dd>
+
                     <hr class="my-2">
+
                     <dt class="col-sm-5">Nombre Peticionario:</dt>
                     <dd class="col-sm-7">{{ pqrs.peticionario_nombre }}</dd>
+
                     <dt class="col-sm-5">Calidad Peticionario:</dt>
                     <dd class="col-sm-7">{{ pqrs.calidad_peticionario.tipo }}</dd>
+
                     <dt class="col-sm-5">Tipo de Trámite:</dt>
                     <dd class="col-sm-7">{{ pqrs.tipo_tramite.nombre }}</dd>
                 </dl>
@@ -59,83 +107,185 @@
         </div>
     </div>
 </div>
+{% if puede_gestionar %}
+<div class="card mt-4">
+    <div class="card-header bg-primary text-white" data-bs-toggle="collapse" data-bs-target="#collapseRespuesta" style="cursor: pointer;">
+        <h5 class="mb-0 d-flex justify-content-between align-items-center">
+            <span><i class="fas fa-gavel"></i> Respuesta Definitiva al Peticionario</span>
+            <i class="fas fa-chevron-down"></i>
+        </h5>
+    </div>
 
+    <div id="collapseRespuesta" class="collapse show">
+        <div class="card-body">
 
-<form action="{% url 'enviar_respuesta_email' pqrs.id %}" method="POST">
-    {% csrf_token %}
-    <div class="card mt-4">
-        <div class="card-header" data-bs-toggle="collapse" data-bs-target="#collapseAdjuntos" style="cursor: pointer;">
-            <h5 class="mb-0 d-flex justify-content-between align-items-center">
-                <span><i class="fas fa-folder-open"></i> Archivos Adjuntos (Selecciona para enviar por correo)</span>
-                <i class="fas fa-chevron-down"></i>
-            </h5>
+            {% if pqrs.fecha_cierre %}
+                <p class="card-text text-muted">
+                    Esta fue la respuesta definitiva que se guardó para el caso:
+                </p>
+                <div class="p-3 bg-light border rounded">
+                    <p style="white-space: pre-wrap;">{{ pqrs.respuesta_tramite|default:"No se registró una respuesta definitiva." }}</p>
+                </div>
+
+            {% else %}
+                <p class="card-text text-muted">
+                    Este texto será utilizado para generar el PDF oficial y como cuerpo del correo electrónico de respuesta.
+                </p>
+                <form method="POST">
+                    {% csrf_token %}
+                    {{ form_respuesta.as_p }}
+                    <div class="text-end">
+                        <button type="submit" name="submit_respuesta" class="btn btn-primary">
+                            <i class="fas fa-save"></i> Guardar Respuesta Definitiva
+                        </button>
+                    </div>
+                </form>
+            {% endif %}
+
         </div>
-        <div id="collapseAdjuntos" class="collapse show">
-            <div class="card-body">
+    </div>
+</div>
+{% endif %}
+<div class="card mt-4">
+    <div class="card-header" data-bs-toggle="collapse" data-bs-target="#collapseSeguimiento" style="cursor: pointer;">
+        <h5 class="mb-0 d-flex justify-content-between align-items-center">
+            <span><i class="fas fa-history"></i> Historial de Seguimiento</span>
+            <i class="fas fa-chevron-down"></i>
+        </h5>
+    </div>
+
+    <div id="collapseSeguimiento" class="collapse">
+        <div class="card-body">
+
+            {% if not pqrs.fecha_cierre %}
+            <form method="POST">
+                {% csrf_token %}
+                <div class="input-group">
+                    {{ form_seguimiento.nota }}
+                    <button class="btn btn-primary" type="submit" name="submit_seguimiento">
+                        <i class="fas fa-plus-circle"></i> Añadir Nota
+                    </button>
+                </div>
+            </form>
+            <hr>
+            {% endif %}
+
+            {% for seguimiento in seguimientos %}
+            <div class="d-flex mb-3">
+                <div class="flex-shrink-0 me-3"><i class="fas fa-user-circle fa-2x text-muted"></i></div>
+                <div class="flex-grow-1">
+                    <p class="mb-0">{{ seguimiento.nota|linebreaksbr }}</p>
+                    <small class="text-muted">Añadido por <strong>{{ seguimiento.autor.get_full_name|default:seguimiento.autor.username }}</strong> el {{ seguimiento.fecha_creacion|date:"d M Y, P" }}</small>
+                </div>
+            </div>
+            {% empty %}
+            <p class="text-muted">No hay notas de seguimiento para este caso.</p>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+<div class="card mt-4">
+    <div class="card-header" data-bs-toggle="collapse" data-bs-target="#collapseAdjuntos" style="cursor: pointer;">
+        <h5 class="mb-0 d-flex justify-content-between align-items-center">
+            <span><i class="fas fa-folder-open"></i> Archivos Adjuntos</span>
+            <i class="fas fa-chevron-down"></i>
+        </h5>
+    </div>
+    <div id="collapseAdjuntos" class="collapse show">
+        <div class="card-body">
+            <form action="{% url 'enviar_respuesta_email' pqrs.id %}" method="POST">
+                {% csrf_token %}
                 {% if adjuntos %}
                     <ul class="list-group list-group-flush">
                         {% for adjunto in adjuntos %}
-                           <li class="list-group-item d-flex justify-content-between align-items-center">
-    
-   <li class="list-group-item d-flex justify-content-between align-items-center">
-    
-    <div class="me-auto">
-        <input class="form-check-input me-2" type="checkbox" name="adjuntos_a_enviar" value="{{ adjunto.id }}" id="adjunto_{{ adjunto.id }}">
-        <label class="form-check-label" for="adjunto_{{ adjunto.id }}">
-            <a href="{{ adjunto.archivo.url }}" target="_blank">{{ adjunto.nombre_corto }}</a>
-        </label>
-        <span class="badge bg-info text-dark ms-2">{{ adjunto.get_tipo_archivo_display }}</span>
-        {% if adjunto.descripcion %}
-            <small class="text-muted d-block ms-4">{{ adjunto.descripcion }}</small>
-        {% endif %}
-    </div>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <div class="me-auto">
+                                    
+                                    {% if not pqrs.fecha_cierre %}
+                                    <input class="form-check-input me-2" type="checkbox" name="adjuntos_a_enviar" value="{{ adjunto.id }}" id="adjunto_{{ adjunto.id }}">
+                                    {% endif %}
 
-    <div class="d-flex align-items-center">
-        <span class="badge bg-light text-dark me-3">{{ adjunto.fecha_carga|date:"d M Y, P" }}</span>
-        
-        {% if puede_gestionar %}
-        <button type="submit" 
-        formaction="{% url 'eliminar_adjunto' adjunto.id %}" 
-        formmethod="POST"
-        onclick="return confirm('¿Estás seguro de que quieres eliminar este archivo?');"
-        class="btn btn-outline-danger btn-sm" 
-        title="Eliminar Archivo">
-    <i class="fas fa-trash-alt"></i> Eliminar
-</button>
-        {% endif %}
-    </div>
-</li>
+                                    <label class="form-check-label" for="adjunto_{{ adjunto.id }}">
+                                        <a href="{{ adjunto.archivo.url }}" target="_blank">{{ adjunto.nombre_corto }}</a>
+                                    </label>
+                                    <span class="badge bg-info text-dark ms-2">{{ adjunto.get_tipo_archivo_display }}</span>
+                                    {% if adjunto.descripcion %}
+                                        <small class="text-muted d-block ms-4">{{ adjunto.descripcion }}</small>
+                                    {% endif %}
+                                </div>
+                                <div class="d-flex align-items-center">
+                                    <span class="badge bg-light text-dark me-3">{{ adjunto.fecha_carga|date:"d M Y, P" }}</span>
+                                    
+                                    {% if not pqrs.fecha_cierre and puede_gestionar %}
+                                    <button type="submit" 
+                                            formaction="{% url 'eliminar_adjunto' adjunto.id %}" 
+                                            formmethod="POST"
+                                            onclick="return confirm('¿Estás seguro de que quieres eliminar este archivo?');"
+                                            class="btn btn-outline-danger btn-sm" 
+                                            title="Eliminar Archivo">
+                                        <i class="fas fa-trash-alt"></i> Eliminar
+                                    </button>
+                                    {% endif %}
+                                </div>
+                            </li>
                         {% endfor %}
                     </ul>
                 {% else %}
                     <p class="text-muted mb-0">Aún no hay archivos adjuntos para este caso.</p>
                 {% endif %}
-            </div>
-        </div>
-    </div>
-{% if pqrs.estado == 'Resuelto' and puede_gestionar %}
-    <div class="text-end mt-3">
-        <a href="{% url 'generar_pdf' pqrs.id %}" class="btn btn-info" target="_blank">
-            <i class="fas fa-file-pdf"></i> Generar PDF
-        </a>
+
+              {% if not pqrs.fecha_cierre and pqrs.respuesta_tramite and puede_gestionar %}
+            <div class="text-end mt-3">
+                 <a href="{% url 'generar_pdf' pqrs.id %}" class="btn btn-info" target="_blank">
+                  <i class="fas fa-file-pdf"></i> Generar PDF
+              </a>
         <button type="submit" class="btn btn-success">
-            <i class="fas fa-paper-plane"></i> Enviar Correo con Adjuntos Seleccionados
+            <i class="fas fa-paper-plane"></i> Enviar Correo con Adjuntos
         </button>
     </div>
 {% endif %}
-</form> 
-<div class="card mt-4">
-    <div class="card-footer">
-        <h6><i class="fas fa-upload"></i> Subir Nuevo Archivo</h6>
-        <form method="POST" action="{% url 'detalle_pqrs' pqrs.id %}" enctype="multipart/form-data" class="mt-3">
-            {% csrf_token %}
-            <div class="row g-2 align-items-center">
-                <div class="col-md-4">{{ form_adjuntos.archivo.label_tag }}{{ form_adjuntos.archivo }}</div>
-                <div class="col-md-3">{{ form_adjuntos.descripcion.label_tag }}{{ form_adjuntos.descripcion }}</div>
-                <div class="col-md-3">{{ form_adjuntos.tipo_archivo.label_tag }}{{ form_adjuntos.tipo_archivo }}</div>
-                <div class="col-md-2 align-self-end"><button type="submit" class="btn btn-primary w-100">Adjuntar</button></div>
-            </div>
-        </form>
+            </form>
+        </div>
     </div>
+</div>
+
+ 
+    {% if not pqrs.fecha_cierre %}
+
+    <div class="card mt-4">
+        <div class="card-footer">
+            <h6><i class="fas fa-upload"></i> Subir Nuevo Archivo</h6>
+            <form method="POST" action="{% url 'detalle_pqrs' pqrs.id %}" enctype="multipart/form-data" class="mt-3">
+                {% csrf_token %}
+                <div class="row g-2 align-items-center">
+                    <div class="col-md-4">{{ form_adjuntos.archivo.label_tag }}{{ form_adjuntos.archivo }}</div>
+                    <div class="col-md-3">{{ form_adjuntos.descripcion.label_tag }}{{ form_adjuntos.descripcion }}</div>
+                    <div class="col-md-3">{{ form_adjuntos.tipo_archivo.label_tag }}{{ form_adjuntos.tipo_archivo }}</div>
+    <div class="col-md-2 align-self-end"><button type="submit" name="submit_adjunto" class="btn btn-primary w-100">Adjuntar</button></div>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+<div class="modal fade" id="trasladoModal" tabindex="-1" aria-labelledby="trasladoModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="trasladoModalLabel">Trasladar PQRS por Competencia</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form action="{% url 'trasladar_pqrs' pqrs.id %}" method="POST">
+          {% csrf_token %}
+          <div class="modal-body">
+            <p>Esta acción marcará el caso como "En Traslado" y la responsabilidad de la respuesta pasará a otra dependencia. El abogado asignado quedará como supervisor.</p>
+            {{ form_traslado.as_p }}
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="submit" class="btn btn-primary">Confirmar Traslado</button>
+          </div>
+      </form>
+    </div>
+  </div>
 </div>
 {% endblock %}

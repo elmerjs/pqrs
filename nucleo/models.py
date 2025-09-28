@@ -36,6 +36,14 @@ class Pqrs(models.Model):
     respuesta_tramite = models.TextField(blank=True, null=True)
     fecha_respuesta = models.DateField(blank=True, null=True)
     estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='Recibido')
+    fecha_cierre = models.DateField(null=True, blank=True, verbose_name="Fecha de Cierre Definitivo")
+    ESTADOS_TRASLADO = (
+        ('Activo', 'Activo en Vicerrectoría'),
+        ('En Traslado', 'En Traslado a Otra Dependencia'),
+    )
+    estado_traslado = models.CharField(max_length=20, choices=ESTADOS_TRASLADO, default='Activo')
+    dependencia_trasladada = models.CharField(max_length=255, blank=True, null=True, verbose_name="Dependencia a la que se traslada")
+    # --- FIN DEL BLOQUE ---
     peticionario_nombre = models.CharField(max_length=255)
     peticionario_email = models.EmailField(blank=True, null=True)
     calidad_peticionario = models.ForeignKey(CalidadPeticionario, on_delete=models.SET_NULL, null=True)
@@ -97,7 +105,7 @@ class Pqrs(models.Model):
     def __str__(self):
         return f"{self.radicado} - {self.asunto[:50]}"
     
-    # nucleo/models.py
+
 # nucleo/models.py
 class ArchivoAdjunto(models.Model):
     # Opciones para el tipo de archivo
@@ -126,3 +134,16 @@ class ArchivoAdjunto(models.Model):
     @property
     def nombre_corto(self):
         return self.archivo.name.split('/')[-1]
+    # nucleo/models.py
+
+class Seguimiento(models.Model):
+    pqrs = models.ForeignKey(Pqrs, on_delete=models.CASCADE, related_name='seguimientos')
+    autor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    nota = models.TextField(verbose_name="Nota de Seguimiento")
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-fecha_creacion'] # Muestra los más recientes primero
+
+    def __str__(self):
+        return f"Seguimiento en {self.pqrs.radicado} por {self.autor.username}"

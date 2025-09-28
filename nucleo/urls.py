@@ -14,6 +14,10 @@ urlpatterns = [
     path('pqrs/<int:pqrs_id>/pdf/', views.generar_pdf, name='generar_pdf'),
     path('pqrs/<int:pqrs_id>/enviar-respuesta/', views.enviar_respuesta_email, name='enviar_respuesta_email'),
     path('pqrs/<int:pqrs_id>/asignar/', views.asignar_abogado, name='asignar_abogado'),
+    path('pqrs/<int:pqrs_id>/cerrar/', views.cerrar_pqrs, name='cerrar_pqrs'),
+    path('pqrs/<int:pqrs_id>/reabrir/', views.reabrir_pqrs, name='reabrir_pqrs'),
+    path('pqrs/<int:pqrs_id>/trasladar/', views.trasladar_pqrs, name='trasladar_pqrs'),
+    path('pqrs/<int:pqrs_id>/deshacer-traslado/', views.deshacer_traslado_pqrs, name='deshacer_traslado_pqrs'),
 
 ]
 

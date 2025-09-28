@@ -114,7 +114,12 @@
                         {% endif %}
                     {% endif %}
                 </td>                        <td>{{ pqrs.fecha_vencimiento }}</td>
-                                        <td>{{ pqrs.estado }}</td>
+                                       <td>
+    {{ pqrs.estado }}
+    {% if pqrs.estado_traslado == 'En Traslado' %}
+        <br><span class="badge bg-info text-dark">En Traslado</span>
+    {% endif %}
+</td>
                         <td>
                             {% if pqrs.estado_tiempo == "Vencido" %}
                                 <span class="badge bg-danger">Vencido</span>
