@@ -18,6 +18,7 @@ urlpatterns = [
     path('pqrs/<int:pqrs_id>/reabrir/', views.reabrir_pqrs, name='reabrir_pqrs'),
     path('pqrs/<int:pqrs_id>/trasladar/', views.trasladar_pqrs, name='trasladar_pqrs'),
     path('pqrs/<int:pqrs_id>/deshacer-traslado/', views.deshacer_traslado_pqrs, name='deshacer_traslado_pqrs'),
-
+    path('pqrs/<int:pqrs_id>/confirmar/', views.confirmar_pqrs, name='confirmar_pqrs'),
+  
 ]
 

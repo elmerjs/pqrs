@@ -15,6 +15,7 @@ from skimage.transform import rotate
 import base64
 import openpyxl
 import cv2
+from django.core.paginator import Paginator # <-- ¡AÑADE ESTA LÍNEA!
 
 from django.core.files import File # <-- ¡AÑADE ESTA LÍNEA!
 from datetime import datetime
@@ -29,7 +30,7 @@ from django.core.mail import EmailMessage
 from django.contrib import messages
 
 from django.conf import settings
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User, Group
 from django.contrib.staticfiles.storage import staticfiles_storage
 from xhtml2pdf import pisa
 from openpyxl.utils import get_column_letter
@@ -54,16 +55,31 @@ def es_coordinador_o_abogado(user):
 def puede_gestionar_respuesta(user):
     """Verifica si un usuario es Coordinador O Abogado."""
     return user.groups.filter(name__in=['Coordinadores', 'Abogados']).exists()
+# nucleo/views.py
 
 @login_required
 def dashboard(request):
-    queryset = Pqrs.objects.exclude(estado='Anulado').order_by('-fecha_recepcion_inicial')
+    # 1. Define el queryset base, EXCLUYENDO 'Anulado' desde el principio.
+    base_queryset = Pqrs.objects.exclude(estado='Anulado')
 
-    if not es_coordinador(request.user) and not request.user.is_superuser:
-        queryset = queryset.filter(responsable=request.user)
+    es_coord = es_coordinador(request.user)
     
+    # Si el usuario es un abogado, el queryset base para él son solo sus casos.
+    if not es_coord and not request.user.is_superuser:
+        base_queryset = base_queryset.filter(responsable=request.user)
+    
+    # 2. CALCULA LOS CONTEOS PARA LAS TARJETAS usando el queryset base.
+    #    Esto asegura que el total y los demás contadores son correctos y no incluyen los anulados.
+    total_pqrs = base_queryset.count()
+    conteo_recibido = base_queryset.filter(estado='Recibido').count()
+    conteo_en_tramite = base_queryset.filter(estado='En Trámite').count()
+    conteo_resuelto = base_queryset.filter(estado='Resuelto').count()
+    lista_abogados = User.objects.filter(groups__name='Abogados')
+
+    # 3. APLICA LOS FILTROS DEL FORMULARIO a una copia del queryset para la tabla.
+    queryset_filtrado = base_queryset
     filter_form = PqrsFilterForm(request.GET, user=request.user)
-    
+
     if filter_form.is_valid():
         q = filter_form.cleaned_data.get('q')
         vigencia = filter_form.cleaned_data.get('vigencia')
@@ -71,32 +87,55 @@ def dashboard(request):
         estado = filter_form.cleaned_data.get('estado')
         
         if q:
-            queryset = queryset.filter(Q(radicado__icontains=q) | Q(asunto__icontains=q))
+            queryset_filtrado = queryset_filtrado.filter(Q(radicado__icontains=q) | Q(asunto__icontains=q))
         
         if vigencia:
-            queryset = queryset.filter(fecha_recepcion_inicial__year=vigencia)
+            queryset_filtrado = queryset_filtrado.filter(fecha_recepcion_inicial__year=vigencia)
         elif not estado: # Solo aplicar filtro de año actual si no se filtra por estado
             current_year = date.today().year
-            queryset = queryset.filter(fecha_recepcion_inicial__year=current_year)
+            queryset_filtrado = queryset_filtrado.filter(fecha_recepcion_inicial__year=current_year)
 
-        if responsable and (es_coordinador(request.user) or request.user.is_superuser):
-            queryset = queryset.filter(responsable=responsable)
+        if responsable and (es_coord or request.user.is_superuser):
+            queryset_filtrado = queryset_filtrado.filter(responsable=responsable)
         
         if estado:
-            queryset = queryset.filter(estado=estado)
-
-    total_pqrs = Pqrs.objects.count()
-    conteo_por_estado = Pqrs.objects.values('estado').annotate(total=Count('estado')).order_by('estado')
-    es_coord = es_coordinador(request.user)
+            queryset_filtrado = queryset_filtrado.filter(estado=estado)
+        pass
     
-    lista_abogados = None
-    if es_coord or request.user.is_superuser:
-        lista_abogados = User.objects.filter(groups__name='Abogados')
+    # 4. Ordena el resultado final que se mostrará en la tabla.
+    lista_pqrs = queryset_filtrado.order_by('-fecha_recepcion_inicial')
 
+    lista_ordenada = queryset_filtrado.order_by('-fecha_recepcion_inicial')
+
+    # --- ¡NUEVO BLOQUE DE PAGINACIÓN! ---
+    # 1. Creamos un Paginator con la lista completa de resultados, mostrando 15 por página.
+    # --- ¡NUEVO BLOQUE DE PAGINACIÓN CON OPCIÓN DE PER_PAGE! ---
+    # 1. Obtenemos cuántos registros por página quiere ver el usuario (default: 15)
+    per_page = request.GET.get('per_page', 10)
+
+    try:
+        per_page = int(per_page)
+    except ValueError:
+        per_page = 15
+
+    # 2. Creamos el paginador con ese tamaño de página
+    paginator = Paginator(lista_ordenada, per_page)
+
+    # 3. Obtenemos el número de página que el usuario quiere ver
+    page_number = request.GET.get('page')
+
+    # 4. Obtenemos el objeto Page para esa página
+    page_obj = paginator.get_page(page_number)
+    # --- FIN DEL BLOQUE ---
+
+    # --- FIN DEL NUEVO BLOQUE --
+    # 5. Prepara el contexto final para la plantilla.
     contexto = {
         'total_pqrs': total_pqrs,
-        'conteo_por_estado': conteo_por_estado,
-        'lista_pqrs': queryset,
+        'conteo_recibido': conteo_recibido,
+        'conteo_en_tramite': conteo_en_tramite,
+        'conteo_resuelto': conteo_resuelto,
+        'lista_pqrs': page_obj,   # 👈 ahora la lista paginada
         'filter_form': filter_form,
         'es_coordinador': es_coord,
         'lista_abogados': lista_abogados,
@@ -156,54 +195,53 @@ def crear_pqrs_desde_pdf(request):
                 if asunto_extraido:
                     match_peticionario = re.search(r"([A-ZÁÉÍÓÚÑ]{2,}\s[A-ZÁÉÍÓÚÑ\s,]+[A-ZÁÉÍÓÚÑ])", asunto_extraido)
                     if match_peticionario: peticionario_extraido = match_peticionario.group(1).strip().rstrip(',')
-                    # --- ¡NUEVO BLOQUE! Extracción de Fecha de Recepción ---
-                    # --- ¡NUEVO BLOQUE! Extracción de Fecha de Recepción ---
                     # --- ¡NUEVO BLOQUE! Extracción de Fecha de Recepción (CON DIAGNÓSTICO) ---
                     fecha_recepcion_extraida = None
-                    # Diccionario para convertir meses en español a números
                     meses_es = {
                         'ene': 1, 'feb': 2, 'mar': 3, 'abr': 4, 'may': 5, 'jun': 6,
                         'jul': 7, 'ago': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dic': 12
                     }
 
-                    print("\n--- INICIANDO BÚSQUEDA DE FECHA DE RECEPCIÓN ---")
-                    # 1. Buscamos la línea que contiene "Date:"
+                    # Plan A (NUEVA PRIORIDAD): Buscamos la línea "Date:" del correo original.
                     for linea in texto_completo.splitlines():
                         if 'date:' in linea.lower():
-                            # LOG 1: Hemos encontrado una línea candidata
-                            print(f"  [LOG 1] LÍNEA CANDIDATA ENCONTRADA: '{linea.strip()}'")
-                            
-                            # 2. Una vez encontrada, extraemos la fecha de ESA línea
-                            match_fecha = re.search(r"(\d{1,2})(?:\s+de)?\s+([a-z]{3,})(?:\s+de)?\s+(\d{4})", linea, re.IGNORECASE)
-                            
-                            if match_fecha:
-                                # LOG 2: La regla de búsqueda (regex) tuvo éxito
-                                print(f"    [LOG 2] ÉXITO EN REGEX. Grupos capturados: {match_fecha.groups()}")
+                            match_fecha_correo = re.search(r"(\d{1,2})(?:\s+de)?\s+([a-z]{3,})(?:\s+de)?\s+(\d{4})", linea, re.IGNORECASE)
+                            if match_fecha_correo:
                                 try:
-                                    dia = int(match_fecha.group(1))
-                                    mes_str = match_fecha.group(2).lower()[:3]
-                                    ano = int(match_fecha.group(3))
-                                    
+                                    dia = int(match_fecha_correo.group(1))
+                                    mes_str = match_fecha_correo.group(2).lower()[:3]
+                                    ano = int(match_fecha_correo.group(3))
                                     if mes_str in meses_es:
-                                        mes = meses_es[mes_str]
-                                        fecha_recepcion_extraida = datetime(ano, mes, dia).strftime('%Y-%m-%d')
-                                        # LOG 3: La fecha se procesó correctamente
-                                        print(f"      [LOG 3] FECHA PROCESADA CORRECTAMENTE: {fecha_recepcion_extraida}")
-                                        break # Detenemos la búsqueda
-                                    else:
-                                        # LOG 4 (Error): El mes no se encontró en el diccionario
-                                        print(f"      [LOG 4] ERROR: El mes '{mes_str}' no se encontró en el diccionario.")
-                                except (ValueError, IndexError) as e:
-                                    # LOG 5 (Error): Hubo un error al procesar los grupos
-                                    print(f"      [LOG 5] ERROR al procesar los grupos: {e}")
-                            else:
-                                # LOG 6 (Error): La regla de búsqueda (regex) falló en esta línea
-                                print(f"    [LOG 6] FALLO EN REGEX: No se encontró el patrón de fecha en esta línea.")
+                                        fecha_recepcion_extraida = date(ano, meses_es[mes_str], dia)
+                                        print(f"  [LOG] Fecha encontrada en datos del correo (Prioridad 1): {fecha_recepcion_extraida}")
+                                        break 
+                                except (ValueError, IndexError):
+                                    continue
 
+                    # Plan B: Si no se encontró, buscamos la fecha del encabezado del documento (ej. "Popayán, ...")
                     if not fecha_recepcion_extraida:
-                        print("--- BÚSQUEDA FINALIZADA: No se pudo extraer la fecha de recepción. ---\n")
+                        match_fecha_encabezado = re.search(r"Popayán,\s*(\d{1,2})\s+de\s+([a-zA-Z]+)\s+de\s+(\d{4})", texto_completo, re.IGNORECASE)
+                        if match_fecha_encabezado:
+                            try:
+                                dia = int(match_fecha_encabezado.group(1))
+                                mes_str = match_fecha_encabezado.group(2).lower()[:3]
+                                ano = int(match_fecha_encabezado.group(3))
+                                if mes_str in meses_es:
+                                    fecha_recepcion_extraida = date(ano, meses_es[mes_str], dia)
+                                    print(f"  [LOG] Fecha encontrada en encabezado del PDF (Prioridad 2): {fecha_recepcion_extraida}")
+                            except (ValueError, IndexError):
+                                pass
+
+                    # Respaldo Final: Si todo lo demás falla, usamos la fecha actual
+                    if not fecha_recepcion_extraida:
+                        fecha_recepcion_extraida = date.today()
+                        print(f"  [LOG] No se encontró ninguna fecha. Usando fecha actual por defecto: {fecha_recepcion_extraida}")
+
+                    # Convertimos a texto para guardarlo en la sesión
+                    fecha_para_sesion = fecha_recepcion_extraida.strftime('%Y-%m-%d')
+
                     # --- FIN DEL NUEVO BLOQUE ---
-                    # --- FIN DEL NUEVO BLOQUE ---
+
 
                 # --- ¡NUEVO BLOQUE SEGURO! Añade la fecha de vencimiento si la encuentra ---
                 match_vencimiento = re.search(r"(vence el d[ií]a,[\s\S]+?\d{4})", texto_completo, re.IGNORECASE)
@@ -264,7 +302,34 @@ def crear_pqrs_desde_pdf(request):
                         calidad_peticionario_id = calidad_obj.id
                     except CalidadPeticionario.DoesNotExist:
                         calidad_peticionario_id = None
+                # --- ¡NUEVO BLOQUE CORREGIDO! LÓGICA DE CLASIFICACIÓN DE TIPO DE TRÁMITE ---
+                tipo_tramite_id = None
+                tipo_tramite_detectado = None
 
+                # Aplicamos las reglas con los nombres EXACTOS de tu base de datos
+                if calidad_peticionario_detectada == 'Entidad Gubernamental':
+                    tipo_tramite_detectado = 'peticiones especiales'  # CORREGIDO
+                elif 'queja' in asunto_extraido.lower():
+                    tipo_tramite_detectado = 'queja'
+                elif 'gratuidad' in texto_completo.lower():
+                    tipo_tramite_detectado = 'petición general'  # CORREGIDO
+                elif 'documentos' in texto_completo.lower():
+                    tipo_tramite_detectado = 'petición de documentos'  # CORREGIDO
+                else:
+                # --- ¡ESTE ES EL CAMBIO! ---
+                # Si ninguna de las condiciones anteriores se cumple, asignamos este por defecto.
+                     tipo_tramite_detectado = 'petición general'
+                # Si detectamos un tipo de trámite, buscamos su ID en la base de datos
+                if tipo_tramite_detectado:
+                    try:
+                        # Usamos __iexact para ignorar mayúsculas/minúsculas
+                        tramite_obj = TipoTramite.objects.get(nombre__iexact=tipo_tramite_detectado)
+                        tipo_tramite_id = tramite_obj.id
+                        print(f"Tipo de Trámite detectado: '{tipo_tramite_detectado}' (ID: {tipo_tramite_id})")
+                    except TipoTramite.DoesNotExist:
+                        print(f"Advertencia: Tipo de trámite '{tipo_tramite_detectado}' no encontrado en la base de datos.")
+                        tipo_tramite_id = None
+                # --- FIN DEL NUEVO BLOQUE ---
                 # 4. Limpieza y Reconstrucción final del Email
                 if email_extraido:
                     email_extraido = re.sub(r'(Q|Y|\(d|\(M|W)', '@', email_extraido)
@@ -276,13 +341,22 @@ def crear_pqrs_desde_pdf(request):
                             dominio = email_extraido[pos:]
                             email_extraido = f"{usuario}@{dominio}"
 
-                # 5. Guardar en la sesión
+                # --- ¡NUEVO BLOQUE DE LIMPIEZA DEL ASUNTO! ---
+                # 1. Definimos la frase que queremos eliminar
+                frase_a_quitar = "Por ser un asunto de su competencia y a fin de brindar respuesta oportuna,"
+
+                # 2. Limpiamos la frase del asunto que extrajimos
+                asunto_limpio = re.sub(frase_a_quitar, '', asunto_extraido, flags=re.IGNORECASE).strip(" ,")
+                # --- FIN DEL NUEVO BLOQUE ---
+
+                # 5. Guardar en la sesión (usando el asunto ya limpio)
                 request.session['radicado_desde_pdf'] = radicado_extraido
-                request.session['asunto_desde_pdf'] = asunto_extraido
+                request.session['asunto_desde_pdf'] = asunto_limpio # <-- ¡AQUÍ ESTÁ EL CAMBIO!
                 request.session['peticionario_desde_pdf'] = peticionario_extraido
                 request.session['email_desde_pdf'] = email_extraido
                 request.session['calidad_peticionario_id_desde_pdf'] = calidad_peticionario_id
-                request.session['fecha_recepcion_desde_pdf'] = fecha_recepcion_extraida
+                request.session['fecha_recepcion_desde_pdf'] = fecha_para_sesion
+                request.session['tipo_tramite_id_desde_pdf'] = tipo_tramite_id 
                 return redirect('crear_pqrs')
 
             except Exception as e:
@@ -316,6 +390,8 @@ def crear_pqrs(request):
         initial_data['calidad_peticionario'] = request.session.pop('calidad_peticionario_id_desde_pdf', None)
     if 'fecha_recepcion_desde_pdf' in request.session:
             initial_data['fecha_recepcion_inicial'] = request.session.pop('fecha_recepcion_desde_pdf', None)
+    if 'tipo_tramite_id_desde_pdf' in request.session:
+            initial_data['tipo_tramite'] = request.session.pop('tipo_tramite_id_desde_pdf', None)
 
     if request.method == 'POST':
         form = PqrsForm(request.POST)
@@ -454,6 +530,8 @@ def detalle_pqrs(request, pqrs_id):
         'form_traslado': form_traslado,
         'puede_gestionar': puede_gestionar_respuesta(request.user),
         'user_puede_editar': user_puede_editar,
+        'es_coordinador': es_coord, # <-- ¡Este es el cambio clave!
+
     }
     
     return render(request, 'nucleo/detalle_pqrs.html', contexto)
@@ -726,4 +804,34 @@ def deshacer_traslado_pqrs(request, pqrs_id):
             Seguimiento.objects.create(pqrs=pqrs, autor=request.user, nota=nota_automatica)
             
             messages.info(request, f'Se ha deshecho el traslado del caso {pqrs.radicado}.')
+    return redirect('detalle_pqrs', pqrs_id=pqrs_id)
+
+# 1. Función de chequeo (usa la misma lógica de es_coord que ya tienes)
+def es_coordinador_check(user):
+    # ASUMIENDO que la función que comprueba el rol se llama 'es_coordinador' o 'es_coord'
+    # Ajusta esta línea al nombre real de tu función de utilidad.
+    return es_coordinador(user) 
+
+# 2. Vista para manejar la confirmación
+@user_passes_test(es_coordinador_check) 
+def confirmar_pqrs(request, pqrs_id):
+    if request.method == 'POST':
+        # Buscamos la PQRS
+        pqrs = get_object_or_404(Pqrs, id=pqrs_id)
+        
+        # 1. Marcar como confirmado
+        pqrs.confirmado = True
+        
+        # 2. Opcional: Asignar responsable si no lo tiene.
+        # if not pqrs.responsable:
+        #     pqrs.responsable = request.user 
+            
+        pqrs.save(update_fields=['confirmado'])
+        
+        messages.success(request, f'PQRS con Radicado {pqrs.radicado} ha sido confirmada y activada.')
+        
+        # Redirige al detalle
+        return redirect('detalle_pqrs', pqrs_id=pqrs.id)
+        
+    # Si alguien intenta acceder directamente por GET
     return redirect('detalle_pqrs', pqrs_id=pqrs_id)

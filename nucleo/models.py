@@ -36,6 +36,7 @@ class Pqrs(models.Model):
     respuesta_tramite = models.TextField(blank=True, null=True)
     fecha_respuesta = models.DateField(blank=True, null=True)
     estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='Recibido')
+    confirmado = models.BooleanField(default=True, help_text="Indica si la PQRS ha sido revisada y confirmada por un coordinador.")
     fecha_cierre = models.DateField(null=True, blank=True, verbose_name="Fecha de Cierre Definitivo")
     ESTADOS_TRASLADO = (
         ('Activo', 'Activo en Vicerrectoría'),

@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.sites',  # <-- ¡AÑADE ESTA LÍNEA!
     # Apps de terceros
     'crispy_forms',
     'crispy_bootstrap5',
@@ -118,3 +119,10 @@ STATICFILES_DIRS = [
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+SITE_ID = 1
+
+# --- ¡AÑADE ESTE NUEVO BLOQUE! ---
+# --- CONFIGURACIÓN PARA LEER EL BUZÓN DE CORREO (IMAP) ---
+EMAIL_IMAP_HOST = 'imap.gmail.com'  # Servidor para leer correos de Gmail
+EMAIL_IMAP_USER = 'notificacionesvra@unicauca.edu.co'
+EMAIL_IMAP_PASSWORD = 'jjnj yapg qgnl uybc' # La misma contraseña de aplicación

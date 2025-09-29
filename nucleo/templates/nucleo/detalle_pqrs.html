@@ -12,7 +12,18 @@
     {% if not pqrs.fecha_cierre and user_puede_editar %}
         <a href="{% url 'editar_pqrs' pqrs.id %}" class="btn btn-primary">Editar PQRS</a>
     {% endif %}
-
+    {% if es_coordinador and not pqrs.confirmado %}
+        <div class="alert alert-warning">
+            <h4><i class="fas fa-exclamation-triangle"></i> Revisión Pendiente</h4>
+            <p>Esta PQRS fue creada automáticamente y está pendiente de tu revisión. Por favor, verifica que todos los datos sean correctos antes de confirmarla.</p>
+            <form action="{% url 'confirmar_pqrs' pqrs.id %}" method="POST">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-success">
+                    <i class="fas fa-check-circle"></i> Confirmar y Activar PQRS
+                </button>
+            </form>
+        </div>
+    {% endif %}
 {% if user|groups:"Coordinadores" and not pqrs.fecha_cierre %}
     
     {% if pqrs.estado_traslado == 'Activo' %}

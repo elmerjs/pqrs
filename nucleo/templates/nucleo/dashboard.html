@@ -23,25 +23,29 @@
 
 <div class="row mb-4">
     <div class="col-lg-3 col-md-6 mb-4">
-        <div class="stat-card text-center p-3">
-<div class="stat-number text-dark">{{ total_pqrs }}</div>
-            <div class="stat-label">PQRS Totales</div>
+        <div class="stat-card text-center p-2">
+            <div class="stat-number text-dark">{{ total_pqrs }}</div>
+            <div class="stat-label">Casos Activos</div>
         </div>
     </div>
-    {% for item in conteo_por_estado %}
-        <div class="col-lg-2 col-md-6 mb-4">
-            <div class="stat-card text-center p-3">
-                <div class="stat-number 
-                    {% if item.estado == 'Resuelto' %}text-success
-                    {% elif item.estado == 'Anulado' %}text-danger
-                    {% elif item.estado == 'En Trámite' %}text-primary
-                    {% elif item.estado == 'Recibido' %}text-warning
-                    {% endif %}
-                ">{{ item.total }}</div>
-                <div class="stat-label">{{ item.estado }}</div>
-            </div>
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="stat-card text-center p-2">
+            <div class="stat-number text-warning">{{ conteo_recibido }}</div>
+            <div class="stat-label">Recibidos</div>
         </div>
-    {% endfor %}
+    </div>
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="stat-card text-center p-2">
+            <div class="stat-number text-primary">{{ conteo_en_tramite }}</div>
+            <div class="stat-label">En Trámite</div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="stat-card text-center p-2">
+            <div class="stat-number text-success">{{ conteo_resuelto }}</div>
+            <div class="stat-label">Resueltos</div>
+        </div>
+    </div>
 </div>
 
 <div class="card mb-4">
@@ -65,10 +69,30 @@
         </form>
     </div>
 </div>
+
 <div class="card">
-    <div class="card-header">
-        <h3>Listado de PQRS</h3>
-    </div>
+    <div class="card-header d-flex justify-content-between align-items-center">
+    <h3 class="mb-0">Listado de PQRS</h3>
+    
+    <form method="get" class="d-flex align-items-center">
+        <label for="per_page" class="me-2 mb-0">Mostrar</label>
+        <select name="per_page" id="per_page" onchange="this.form.submit()" class="form-select form-select-sm w-auto">
+            <option value="10" {% if request.GET.per_page == "10" %}selected{% endif %}>10</option>
+            <option value="15" {% if request.GET.per_page == "15" or not request.GET.per_page %}selected{% endif %}>15</option>
+            <option value="25" {% if request.GET.per_page == "25" %}selected{% endif %}>25</option>
+            <option value="50" {% if request.GET.per_page == "50" %}selected{% endif %}>50</option>
+        </select>
+        <span class="ms-2">registros</span>
+
+        {# Conserva filtros existentes #}
+        {% for key, value in request.GET.items %}
+            {% if key != 'per_page' and key != 'page' %}
+                <input type="hidden" name="{{ key }}" value="{{ value }}">
+            {% endif %}
+        {% endfor %}
+    </form>
+</div>
+
     <div class="card-body">
         <table class="table table-hover">
             <thead>
@@ -83,9 +107,12 @@
             </thead>
             <tbody>
                 {% for pqrs in lista_pqrs %}
-                    <tr>
+                        <tr class="{% if not pqrs.confirmado %}table-warning{% endif %}">
                 <td>
                     <a href="{% url 'detalle_pqrs' pqrs.id %}">{{ pqrs.radicado }}</a>
+                    {% if not pqrs.confirmado %}
+                    <br><span class="badge bg-warning text-dark">Pendiente de Revisión</span>
+                    {% endif %}
                 </td>                       
                 <td title="{{ pqrs.asunto }}">
     {{ pqrs.asunto|truncatechars:45 }}
@@ -114,13 +141,17 @@
                         {% endif %}
                     {% endif %}
                 </td>                        <td>{{ pqrs.fecha_vencimiento }}</td>
-                                       <td>
-    {{ pqrs.estado }}
-    {% if pqrs.estado_traslado == 'En Traslado' %}
-        <br><span class="badge bg-info text-dark">En Traslado</span>
-    {% endif %}
-</td>
-                        <td>
+                <td>
+                {{ pqrs.estado }}
+
+                {% if pqrs.estado_traslado == 'En Traslado' %}
+                    <br><span class="badge bg-info text-dark">En Traslado</span>
+                {% endif %}
+
+                {% if pqrs.fecha_cierre %}
+                    <br><span class="badge bg-secondary">Cerrado</span>
+                {% endif %}
+            </td>                    <td>
                             {% if pqrs.estado_tiempo == "Vencido" %}
                                 <span class="badge bg-danger">Vencido</span>
                             {% elif pqrs.estado_tiempo == "Por Vencer" %}
@@ -139,6 +170,43 @@
                 {% endfor %}
             </tbody>
         </table>
+        <nav aria-label="Navegación de páginas">
+    <ul class="pagination justify-content-center">
+        
+        {% if lista_pqrs.has_previous %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ lista_pqrs.previous_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">Anterior</a>
+            </li>
+        {% else %}
+            <li class="page-item disabled">
+                <a class="page-link" href="#" tabindex="-1" aria-disabled="true">Anterior</a>
+            </li>
+        {% endif %}
+
+        {% for num in lista_pqrs.paginator.page_range %}
+            {% if lista_pqrs.number == num %}
+                <li class="page-item active" aria-current="page">
+                    <a class="page-link" href="#">{{ num }}</a>
+                </li>
+            {% else %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ num }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">{{ num }}</a>
+                </li>
+            {% endif %}
+        {% endfor %}
+
+        {% if lista_pqrs.has_next %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ lista_pqrs.next_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">Siguiente</a>
+            </li>
+        {% else %}
+            <li class="page-item disabled">
+                <a class="page-link" href="#">Siguiente</a>
+            </li>
+        {% endif %}
+
+    </ul>
+</nav>
     </div>
 </div>
 {% endblock %}
