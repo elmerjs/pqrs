@@ -50,8 +50,10 @@ class PqrsFilterForm(forms.Form):
         widget=forms.TextInput(attrs={'placeholder': 'Escriba aquí...'})
     )
     
+  
     vigencia = forms.ChoiceField(
-        choices=[('', 'Año Actual')] + YEAR_CHOICES, required=False,
+        choices=[('', 'Año Actual'), ('todos', 'Mostrar Todos')] + YEAR_CHOICES, 
+        required=False,
         label='Vigencia'
     )
 

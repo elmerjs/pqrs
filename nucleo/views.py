@@ -89,11 +89,16 @@ def dashboard(request):
         if q:
             queryset_filtrado = queryset_filtrado.filter(Q(radicado__icontains=q) | Q(asunto__icontains=q))
         
-        if vigencia:
+        # DESPUÉS
+        if vigencia and vigencia != 'todos':
+            # Si se seleccionó un año específico (y no es 'todos'), filtra por ese año.
             queryset_filtrado = queryset_filtrado.filter(fecha_recepcion_inicial__year=vigencia)
-        elif not estado: # Solo aplicar filtro de año actual si no se filtra por estado
+        elif not vigencia and not estado:
+            # Si no se seleccionó nada (valor por defecto ''), filtra por el año actual.
+            # (Mantenemos la condición de no filtrar por año si se filtra por estado).
             current_year = date.today().year
             queryset_filtrado = queryset_filtrado.filter(fecha_recepcion_inicial__year=current_year)
+# Si vigencia es 'todos', simplemente no se aplica ningún filtro de año, mostrando todos los registros.
 
         if responsable and (es_coord or request.user.is_superuser):
             queryset_filtrado = queryset_filtrado.filter(responsable=responsable)
