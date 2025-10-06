@@ -1,3 +1,5 @@
+from decouple import config
+import dj_database_url
 # settings.py
 import os # Asegúrate que esta línea esté al principio del archivo
 
@@ -16,12 +18,12 @@ socket.socket = socks.socksocket
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-f9a6vu9e3+4au$)k_-mxrq4yqk(dp20%&&6aya*aqp=gcc^c5u'
+SECRET_KEY = config('SECRET_KEY')
+DEBUG = config('DEBUG', default=False, cast=bool)
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+ALLOWED_HOSTS = ['*'] # Permitimos que Render acceda
 
-ALLOWED_HOSTS = ['192.168.42.175']
+#ALLOWED_HOSTS = ['192.168.42.175']
 
 # Application definition
 INSTALLED_APPS = [
@@ -70,14 +72,9 @@ WSGI_APPLICATION = 'gestion_pqrs.wsgi.application'
 
 # Database
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'pqrs_unicauca_db',
-        'USER': 'root',
-        'PASSWORD': '',
-        'HOST': '127.0.0.1',
-        'PORT': '3306',
-    }
+    'default': dj_database_url.config(
+        default=config('DATABASE_URL')
+    )
 }
 
 # Password validation
