@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Respuesta PQRS {{ pqrs.radicado }}</title>
+    <style>
+        @page {
+            size: letter;
+            /* Margen del CONTENIDO: top, right, bottom, left */
+            /* Ajustado para dejar espacio a los marcos del encabezado y pie */
+            margin: 5cm 2cm 3.5cm 3cm; 
+            
+            @frame header {
+                -pdf-frame-content: header-content;
+                /* CAMBIO: Lo movemos 1cm hacia abajo desde el borde superior */
+                left: 0cm; top: 1cm; width: 100%; height: 3.5cm;
+            }
+            @frame footer {
+                -pdf-frame-content: footer-content;
+                /* CAMBIO: Reducimos la altura para acercarlo al borde */
+                left: 0cm; bottom: 0cm; width: 100%; height: 2.5cm;
+            }
+        }
+        body {
+            font-family: 'Times New Roman', Times, serif;
+            font-size: 12pt;
+            line-height: 1.5;
+        }
+        
+        #header-content, #footer-content {
+            padding: 0 3cm; /* Mantiene los márgenes laterales de las imágenes */
+            box-sizing: border-box;
+        }
+
+        .header-img, .footer-img {
+            width: 100%;
+            display: block;
+        }
+        p {
+            text-align: justify;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="header-content">
+        {% if data_uri_encabezado %}
+            <img src="{{ data_uri_encabezado }}" class="header-img">
+        {% endif %}
+    </div>
+    <div id="footer-content">
+        {% if data_uri_pie %}
+            <img src="{{ data_uri_pie }}" class="footer-img">
+        {% endif %}
+    </div>
+
+    <p>Popayán, {{ fecha_actual|date:"d \d\e F \d\e Y" }}</p>
+    <br><br>
+    <div class="info-peticionario">
+        Señor(a)<br>
+        <strong>{{ pqrs.peticionario_nombre|upper }}</strong><br>
+        Correo Electrónico: {{ pqrs.peticionario_email }}<br>
+        Ciudad
+    </div>
+    <br>
+    <p><strong>Asunto:</strong> Respuesta a su solicitud con radicado N° <strong>{{ pqrs.radicado }}</strong></p>
+    <br>
+    <p>Respetado(a) Señor(a) {{ pqrs.peticionario_nombre }},</p>
+    <br>
+    <p>En atención a su comunicación recibida el día {{ pqrs.fecha_recepcion_inicial|date:"d \d\e F \d\e Y" }}, relacionada con "{{ pqrs.asunto }}", nos permitimos presentar la siguiente respuesta:</p>
+    <br>
+    <div class="info-respuesta" style="white-space: pre-wrap;">
+        {{ pqrs.respuesta_tramite|linebreaksbr }}
+    </div>
+    <br>
+    <p>Agradecemos su comunicación y esperamos que la información proporcionada sea clara y oportuna.</p>
+    <br>
+    <p>Cordialmente,</p>
+    <br><br><br>
+    <div>
+        <strong>Vicerrectoría Académica</strong><br>
+        Universidad del Cauca
+    </div>
+</body>
+</html>

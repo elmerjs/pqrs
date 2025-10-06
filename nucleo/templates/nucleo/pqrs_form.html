@@ -1,0 +1,148 @@
+{% extends 'nucleo/base.html' %}
+{% load crispy_forms_tags %}
+
+{% block title %}
+    {% if pqrs %}Editar PQRS: {{ pqrs.radicado }}{% else %}Registrar Nueva PQRS{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-10 offset-md-1">
+        <div class="card">
+            <div class="card-header">
+                <h2>
+                    {% if pqrs %}
+                        Editar PQRS: {{ pqrs.radicado }}
+                    {% else %}
+                        Registrar Nueva PQRS
+                    {% endif %}
+                </h2>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+
+                    <div class="row g-3">
+
+                        {% if form.radicado %} {# Estos campos solo existen en el form del coordinador #}
+                            <div class="col-md-4">
+                                {{ form.radicado|as_crispy_field }}
+                            </div>
+                            <div class="col-md-4">
+                                {{ form.fecha_recepcion_inicial|as_crispy_field }}
+                            </div>
+
+                            <div class="col-md-4">
+                                {{ form.fecha_vencimiento|as_crispy_field }}
+                            </div>
+                        {% endif %}
+
+                        {% if form.asunto %}
+                            <div class="col-12">
+                                {{ form.asunto|as_crispy_field }}
+                            </div>
+                        {% endif %}
+
+                        {% if form.peticionario_nombre %}
+                            <div class="col-md-5">
+                                {{ form.peticionario_nombre|as_crispy_field }}
+                            </div>
+                            <div class="col-md-4">
+                                {{ form.peticionario_email|as_crispy_field }}
+                            </div>
+                            <div class="col-md-3">
+                                {{ form.calidad_peticionario|as_crispy_field }}
+                            </div>
+                        {% endif %}
+
+                        <div class="row g-3 px-1 mb-3">
+                            {% if form.tipo_tramite %}
+                                <div class="col-md-4">
+                                    {{ form.tipo_tramite|as_crispy_field }}
+                                </div>
+                            {% endif %}
+                            {% if form.responsable %}
+                                <div class="col-md-4">
+                                    {{ form.responsable|as_crispy_field }}
+                                </div>
+                            {% endif %}
+                            {% if form.estado %}
+                                <div class="col-md-4">
+                                    {{ form.estado|as_crispy_field }}
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        {% if form.respuesta_tramite %}
+                            <div class="col-12">
+                                {{ form.respuesta_tramite|as_crispy_field }}
+                            </div>
+                        {% endif %}
+
+                    </div>
+
+                    <div class="d-grid gap-2 mt-4">
+                        <button type="submit" class="btn btn-primary btn-lg">Guardar Cambios</button>
+                        <a href="{% url 'dashboard' %}" class="btn btn-secondary">Cancelar</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    console.log("--- SCRIPT DE CÁLCULO DE FECHA INICIADO ---");
+
+    // 1. Obtenemos los campos del formulario
+    const tipoTramiteSelect = document.querySelector('#id_tipo_tramite');
+    const fechaRecepcionInput = document.querySelector('#id_fecha_recepcion_inicial');
+    const fechaVencimientoInput = document.querySelector('#id_fecha_vencimiento');
+
+    // Verificamos si encontramos los campos
+    console.log("Campo Tipo Trámite:", tipoTramiteSelect);
+    console.log("Campo Fecha Recepción:", fechaRecepcionInput);
+    console.log("Campo Fecha Vencimiento:", fechaVencimientoInput);
+
+    // Función que se encargará de hacer la magia
+    function recalcularFechaVencimiento() {
+        console.log("Detectado un cambio, iniciando recálculo...");
+        
+        const tipoTramiteId = tipoTramiteSelect.value;
+        const fechaInicial = fechaRecepcionInput.value;
+
+        if (!tipoTramiteId || !fechaInicial) {
+            console.log("Faltan datos (ID de trámite o fecha inicial), no se hará nada.");
+            return;
+        }
+
+        // 2. Construimos la URL y la llamamos
+        const url = `{% url 'calcular_vencimiento_api' %}?tipo_tramite_id=${tipoTramiteId}&fecha_inicial=${fechaInicial}`;
+        console.log("Llamando a la API en la URL:", url);
+
+        fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                console.log("Respuesta recibida del servidor:", data);
+                if (data.nueva_fecha_vencimiento) {
+                    // 3. Actualizamos el campo de fecha de vencimiento
+                    fechaVencimientoInput.value = data.nueva_fecha_vencimiento;
+                    console.log('¡ÉXITO! Fecha de vencimiento actualizada a:', data.nueva_fecha_vencimiento);
+                } else if (data.error) {
+                    console.error("El servidor devolvió un error:", data.error);
+                }
+            })
+            .catch(error => console.error('Error grave al llamar a la API:', error));
+    }
+
+    // 4. "Escuchamos" los cambios, solo si encontramos los elementos
+    if (tipoTramiteSelect && fechaRecepcionInput && fechaVencimientoInput) {
+        tipoTramiteSelect.addEventListener('change', recalcularFechaVencimiento);
+        fechaRecepcionInput.addEventListener('change', recalcularFechaVencimiento);
+        console.log("¡Todo listo! Escuchando cambios en los campos.");
+    } else {
+        console.error("ERROR: No se pudieron encontrar uno o más campos en el formulario. Verifica los IDs ('id_tipo_tramite', 'id_fecha_recepcion_inicial', 'id_fecha_vencimiento').");
+    }
+});
+</script>
+{% endblock %}

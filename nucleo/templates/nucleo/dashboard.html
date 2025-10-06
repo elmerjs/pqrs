@@ -1,0 +1,283 @@
+{% extends 'nucleo/base.html' %}
+{% load crispy_forms_tags %}
+
+{% block title %}Dashboard de PQRS{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Tablero de Control</h1>
+    <div class="d-flex align-items-center gap-2"> 
+        <a href="{% url 'exportar_excel' %}?{{ request.GET.urlencode }}" class="btn btn-success">
+            <i class="fas fa-file-excel"></i> Exportar a Excel
+        </a>
+        
+        {% if es_coordinador %}
+            <a href="{% url 'crear_pqrs' %}" class="btn btn-primary">+ Registrar Nueva PQRS</a>
+            
+            <a href="{% url 'crear_pqrs_desde_pdf' %}" class="btn btn-info">
+                <i class="fas fa-robot"></i> Crear desde PDF
+            </a>
+        {% endif %}
+
+        <a href="https://docs.google.com/spreadsheets/d/1QadVa2F37vtd6YS5Jpd4iXDivJRSoC9MMQLJSU3tDow/edit?usp=sharing" 
+           class="btn btn-light border" 
+           target="_blank" 
+           title="Abrir hoja de cálculo de seguimiento">
+            <i class="fab fa-google-drive"></i> Reporte Drive
+        </a>
+        </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="stat-card text-center p-2">
+            <div class="stat-number text-dark">{{ total_pqrs }}</div>
+            <div class="stat-label">Casos Activos</div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="stat-card text-center p-2">
+            <div class="stat-number text-warning">{{ conteo_recibido }}</div>
+            <div class="stat-label">Recibidos</div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="stat-card text-center p-2">
+            <div class="stat-number text-primary">{{ conteo_en_tramite }}</div>
+            <div class="stat-label">En Trámite</div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="stat-card text-center p-2">
+            <div class="stat-number text-success">{{ conteo_resuelto }}</div>
+            <div class="stat-label">Resueltos</div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end filter-form">
+            <div class="col-md-4">
+                {{ filter_form.q|as_crispy_field }}
+            </div>
+            <div class="col-md-2">
+                {{ filter_form.vigencia|as_crispy_field }}
+            </div>
+            <div class="col-md-2">
+                {{ filter_form.responsable|as_crispy_field }}
+            </div>
+            <div class="col-md-2">
+                {{ filter_form.estado|as_crispy_field }}
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-secondary w-100">Filtrar</button>
+            </div>
+        </form>
+        
+        {# --- SECCIÓN DE FILTROS ACTIVOS SIMPLIFICADA --- #}
+        {% if request.GET.q or request.GET.vigencia or request.GET.responsable or request.GET.estado %}
+        <div class="mt-3 pt-3 border-top">
+            <h6 class="mb-2">Filtros aplicados:</h6>
+            <div class="d-flex flex-wrap gap-2">
+                {% if request.GET.vigencia %}
+                    <span class="badge bg-info text-dark">
+                        Vigencia: 
+                        {% if request.GET.vigencia == 'todos' %}
+                            Todos los periodos
+                        {% else %}
+                            {{ request.GET.vigencia }}
+                        {% endif %}
+                        <a href="?{% for key, value in request.GET.items %}{% if key != 'vigencia' and key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}" class="text-dark ms-1">×</a>
+                    </span>
+                {% endif %}
+                
+                {% if request.GET.estado %}
+                    <span class="badge bg-info text-dark">
+                        Estado: {{ request.GET.estado }}
+                        <a href="?{% for key, value in request.GET.items %}{% if key != 'estado' and key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}" class="text-dark ms-1">×</a>
+                    </span>
+                {% endif %}
+                
+                {% if request.GET.responsable %}
+                    <span class="badge bg-info text-dark">
+                        Responsable: 
+                        {% for abogado in lista_abogados %}
+                            {% if abogado.id == request.GET.responsable|add:'0' %}
+                                {{ abogado.get_full_name }}
+                            {% endif %}
+                        {% endfor %}
+                        <a href="?{% for key, value in request.GET.items %}{% if key != 'responsable' and key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}" class="text-dark ms-1">×</a>
+                    </span>
+                {% endif %}
+                
+                {% if request.GET.q %}
+                    <span class="badge bg-info text-dark">
+                        Búsqueda: "{{ request.GET.q }}"
+                        <a href="?{% for key, value in request.GET.items %}{% if key != 'q' and key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}" class="text-dark ms-1">×</a>
+                    </span>
+                {% endif %}
+                
+                {% if request.GET.q or request.GET.vigencia or request.GET.responsable or request.GET.estado %}
+                    <a href="?" class="badge bg-danger text-decoration-none">
+                        Limpiar todos los filtros
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+        {# --- FIN SECCIÓN FILTROS ACTIVOS --- #}
+        
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h3 class="mb-0">Listado de PQRS</h3>
+        
+        <form method="get" class="d-flex align-items-center">
+            <label for="per_page" class="me-2 mb-0">Mostrar</label>
+            <select name="per_page" id="per_page" onchange="this.form.submit()" class="form-select form-select-sm w-auto">
+                <option value="10" {% if request.GET.per_page == "10" %}selected{% endif %}>10</option>
+                <option value="15" {% if request.GET.per_page == "15" or not request.GET.per_page %}selected{% endif %}>15</option>
+                <option value="25" {% if request.GET.per_page == "25" %}selected{% endif %}>25</option>
+                <option value="50" {% if request.GET.per_page == "50" %}selected{% endif %}>50</option>
+            </select>
+            <span class="ms-2">registros</span>
+
+            {# Conserva filtros existentes #}
+            {% for key, value in request.GET.items %}
+                {% if key != 'per_page' and key != 'page' %}
+                    <input type="hidden" name="{{ key }}" value="{{ value }}">
+                {% endif %}
+            {% endfor %}
+        </form>
+    </div>
+
+    <div class="card-body">
+        {# --- CONTADOR CONTEXTUAL --- #}
+        <p class="text-muted mb-3">
+            Mostrando <strong>{{ lista_pqrs.paginator.count }}</strong> 
+            de <strong>{{ total_pqrs }}</strong> casos
+            {% if request.GET.vigencia and request.GET.vigencia != 'todos' %}
+                para la vigencia {{ request.GET.vigencia }}
+            {% endif %}
+        </p>
+        
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>Radicado</th>
+                    <th>Asunto</th>
+                    <th>Responsable</th>
+                    <th>Vencimiento</th>
+                    <th>Estado Proceso</th>
+                    <th>Estado Tiempo</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for pqrs in lista_pqrs %}
+                    <tr class="{% if not pqrs.confirmado %}table-warning{% endif %}">
+                        <td>
+                            <a href="{% url 'detalle_pqrs' pqrs.id %}">{{ pqrs.radicado }}</a>
+                            {% if not pqrs.confirmado %}
+                                <br><span class="badge bg-warning text-dark">Pendiente de Revisión</span>
+                            {% endif %}
+                        </td>                       
+                        <td title="{{ pqrs.asunto }}">
+                            {{ pqrs.asunto|truncatechars:45 }}
+                            <br>
+                            <small class="text-muted">
+                                <i class="fas fa-user"></i> {{ pqrs.peticionario_nombre }}
+                            </small>
+                        </td>
+                        <td>
+                            {% if pqrs.responsable %}
+                                {{ pqrs.responsable.get_full_name }}
+                            {% else %}
+                                {% if es_coordinador %}
+                                    <form action="{% url 'asignar_abogado' pqrs.id %}" method="POST" class="d-flex">
+                                        {% csrf_token %}
+                                        <select name="responsable_id" class="form-select form-select-sm me-2">
+                                            <option value="">Seleccionar...</option>
+                                            {% for abogado in lista_abogados %}
+                                                <option value="{{ abogado.id }}">{{ abogado.get_full_name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <button type="submit" class="btn btn-primary btn-sm">Asignar</button>
+                                    </form>
+                                {% else %}
+                                    <span class="text-muted">No asignado</span>
+                                {% endif %}
+                            {% endif %}
+                        </td>                        
+                        <td>{{ pqrs.fecha_vencimiento }}</td>
+                        <td>
+                            {{ pqrs.estado }}
+                            {% if pqrs.estado_traslado == 'En Traslado' %}
+                                <br><span class="badge bg-info text-dark">En Traslado</span>
+                            {% endif %}
+                            {% if pqrs.fecha_cierre %}
+                                <br><span class="badge bg-secondary">Cerrado</span>
+                            {% endif %}
+                        </td>                    
+                        <td>
+                            {% with estado_actual=pqrs.get_estado_tiempo %}
+                                {% if estado_actual == "Vencido" %}
+                                    <span class="badge bg-danger">Vencido</span>
+                                {% elif estado_actual == "Por Vencer" %}
+                                    <span class="badge bg-warning text-dark">Por Vencer</span>
+                                {% elif estado_actual == "A Tiempo" %}
+                                    <span class="badge bg-success">A Tiempo</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{{ estado_actual }}</span>
+                                {% endif %}
+                            {% endwith %}
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center">No se encontraron PQRS con los filtros seleccionados.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        
+        <nav aria-label="Navegación de páginas">
+            <ul class="pagination justify-content-center">
+                {% if lista_pqrs.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ lista_pqrs.previous_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">Anterior</a>
+                    </li>
+                {% else %}
+                    <li class="page-item disabled">
+                        <a class="page-link" href="#" tabindex="-1" aria-disabled="true">Anterior</a>
+                    </li>
+                {% endif %}
+
+                {% for num in lista_pqrs.paginator.page_range %}
+                    {% if lista_pqrs.number == num %}
+                        <li class="page-item active" aria-current="page">
+                            <a class="page-link" href="#">{{ num }}</a>
+                        </li>
+                    {% else %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ num }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">{{ num }}</a>
+                        </li>
+                    {% endif %}
+                {% endfor %}
+
+                {% if lista_pqrs.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ lista_pqrs.next_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">Siguiente</a>
+                    </li>
+                {% else %}
+                    <li class="page-item disabled">
+                        <a class="page-link" href="#">Siguiente</a>
+                    </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+</div>
+{% endblock %}

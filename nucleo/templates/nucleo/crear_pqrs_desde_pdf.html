@@ -1,0 +1,33 @@
+{% extends 'nucleo/base.html' %}
+
+{% block title %}Crear PQRS desde PDF{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h4><i class="fas fa-robot"></i> Asistente de Creación desde PDF</h4>
+                </div>
+                <div class="card-body">
+                    <p class="card-text">Sube el archivo PDF de la queja remitido por la Secretaría General. El sistema intentará extraer el asunto automáticamente para pre-llenar el formulario.</p>
+                    <form method="post" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            {{ form.pdf_file.label_tag }}
+                            {{ form.pdf_file }}
+                        </div>
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                            <a href="{% url 'dashboard' %}" class="btn btn-secondary">Cancelar</a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-cogs"></i> Procesar PDF y Continuar
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
