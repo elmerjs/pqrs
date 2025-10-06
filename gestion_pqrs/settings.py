@@ -8,10 +8,11 @@ import socket
 import socks
 
 # --- CONFIGURACIÓN DEL PROXY DE UNICAUCA ---
-PROXY_HOST = 'proxy.unicauca.edu.co'
-PROXY_PORT = 3128
-socks.set_default_proxy(socks.HTTP, PROXY_HOST, PROXY_PORT)
-socket.socket = socks.socksocket
+if DEBUG:
+    PROXY_HOST = 'proxy.unicauca.edu.co'
+    PROXY_PORT = 3128
+    socks.set_default_proxy(socks.HTTP, PROXY_HOST, PROXY_PORT)
+    socket.socket = socks.socksocket
 # --- FIN DE LA CONFIGURACIÓN DEL PROXY ---
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -43,6 +44,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware', # <-- MUEVE ESTA LÍNEA AQUÍ
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
