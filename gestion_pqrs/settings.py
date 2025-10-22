@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import socket
 import socks
+import ssl  # <--- ¡AÑADE ESTA LÍNEA AQUÍ ARRIBA!
 from decouple import config
 import dj_database_url
 
@@ -20,11 +21,18 @@ DEBUG = config('DEBUG', default=False, cast=bool)
 # CONFIGURACIÓN DEL PROXY (SOLO SE ACTIVA EN LOCAL)
 # ==============================================================================
 if DEBUG:
+    # El proxy SOCKS solo es necesario para 'runserver'
     PROXY_HOST = 'proxy.unicauca.edu.co'
     PROXY_PORT = 3128
     socks.set_default_proxy(socks.HTTP, PROXY_HOST, PROXY_PORT)
     socket.socket = socks.socksocket
 
+# --- ¡SOLUCIÓN! ---
+# Ponemos el parche SSL AFUERA del 'if DEBUG'.
+# Esto fuerza a AMBAS terminales (runserver y process_tasks)
+# a ignorar la verificación SSL del proxy.
+ssl._create_default_https_context = ssl._create_unverified_context
+# --- FIN DE LA SOLUCIÓN ---
 # ==============================================================================
 # CONFIGURACIÓN GENERAL DE DJANGO
 # ==============================================================================
@@ -122,17 +130,22 @@ SITE_ID = 1
 # ==============================================================================
 # CONFIGURACIÓN DE CORREO (SMTP y IMAP)
 # ==============================================================================
+# --- A. CONFIGURACIÓN DE ENVÍO (SMTP) USANDO BREVO ---
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 587
+EMAIL_HOST = config('EMAIL_HOST')                   # Lee 'smtp-relay.brevo.com' de .env
+EMAIL_PORT = config('EMAIL_PORT', cast=int)         # Lee '587' de .env
+EMAIL_HOST_USER = config('EMAIL_HOST_USER')         # Lee '99d9c...' de .env
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD') # Lee la API Key de .env
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'notificacionesvra@unicauca.edu.co'
-EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD') # Leído desde .env/Render
 
+# ¡IMPORTANTE! Esta es la dirección "De:" que verán los usuarios.
+# Como ya verificaste 'notificacionesvra' en Brevo, esto SÍ funcionará.
+DEFAULT_FROM_EMAIL = '"Notificaciones PQRS VRA" <notificaciones.vra.pqrs@gmail.com>'
+# --- B. CONFIGURACIÓN DE LECTURA (IMAP) USANDO GOOGLE ---
+# (Esta parte se queda igual que como la tenías)
 EMAIL_IMAP_HOST = 'imap.gmail.com'
 EMAIL_IMAP_USER = 'notificacionesvra@unicauca.edu.co'
-EMAIL_IMAP_PASSWORD = config('EMAIL_IMAP_PASSWORD') # Leído desde .env/Render
-
+EMAIL_IMAP_PASSWORD = config('EMAIL_IMAP_PASSWORD') # Lee la contraseña de Google de .env
 # ==============================================================================
 # CONFIGURACIÓN DE GOOGLE SHEETS (Flexible para local y Render)
 # ==============================================================================

@@ -96,7 +96,8 @@ Para ver y asignar el caso, por favor haz clic en el siguiente enlace:
                 continue
 
             try:
-                send_mail(asunto, mensaje, settings.EMAIL_HOST_USER, destinatarios, fail_silently=False)
+                #send_mail(asunto, mensaje, settings.EMAIL_HOST_USER, destinatarios, fail_silently=False)
+                send_mail(asunto, mensaje, settings.DEFAULT_FROM_EMAIL, destinatarios, fail_silently=False)
                 self.stdout.write(self.style.SUCCESS(f'Alerta para PQRS {pqrs.radicado} enviada a: {", ".join(destinatarios)}'))
                 contador_enviados += 1
             except Exception as e:
