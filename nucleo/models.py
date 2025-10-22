@@ -114,7 +114,7 @@ class Pqrs(models.Model):
                 if enviar_correo_asignacion_pqrs:
                     # Tu lógica para agendar el correo...
                     try:
-                        enviar_correo_asignacion_pqrs(self.radicado, self.responsable.id, self.id, schedule=5)
+                        enviar_correo_asignacion_pqrs(self.radicado, self.responsable.id, self.id, schedule=120)
                         print(f"📧 Tarea de correo programada para PQRS {self.radicado}")
                     except Exception as e:
                         print(f"❌ Error programando tarea de correo: {e}")

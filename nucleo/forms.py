@@ -2,7 +2,6 @@
 from django import forms
 from .models import Pqrs, User, ArchivoAdjunto, Seguimiento
 from datetime import date
-#from .models import Pqrs, ArchivoAdjunto # <-- Modifica esta línea
 from django.contrib.auth.models import User
 
 class PqrsForm(forms.ModelForm):
@@ -23,13 +22,32 @@ class PqrsForm(forms.ModelForm):
         }
         widgets = {
             'fecha_recepcion_inicial': forms.DateInput(
-                attrs={'type': 'date', 'class': 'form-control'}
+                attrs={'type': 'date', 'class': 'form-control'},
+                format='%Y-%m-%d'  # ← AÑADE ESTA LÍNEA
             ),
-            'asunto': forms.Textarea(attrs={'rows': 3}),
-            'fecha_vencimiento': forms.DateInput(attrs={'type': 'date'}), 
-
-            'respuesta_tramite': forms.Textarea(attrs={'rows': 5}),
+            'fecha_vencimiento': forms.DateInput(
+                attrs={'type': 'date', 'class': 'form-control'},
+                format='%Y-%m-%d'  # ← AÑADE ESTA LÍNEA
+            ),
+            'asunto': forms.Textarea(attrs={'rows': 3, 'class': 'form-control'}),
+            'radicado': forms.TextInput(attrs={'class': 'form-control'}),
+            'peticionario_nombre': forms.TextInput(attrs={'class': 'form-control'}),
+            'peticionario_email': forms.EmailInput(attrs={'class': 'form-control'}),
+            'calidad_peticionario': forms.Select(attrs={'class': 'form-control'}),
+            'tipo_tramite': forms.Select(attrs={'class': 'form-control'}),
+            'responsable': forms.Select(attrs={'class': 'form-control'}),
+            'estado': forms.Select(attrs={'class': 'form-control'}),
+            'respuesta_tramite': forms.Textarea(attrs={'rows': 5, 'class': 'form-control'}),
         }
+
+    # AÑADE ESTE MÉTODO PARA INICIALIZAR LOS WIDGETS CORRECTAMENTE
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Asegurar que las fechas se muestren en formato correcto
+        if self.instance and self.instance.fecha_recepcion_inicial:
+            self.initial['fecha_recepcion_inicial'] = self.instance.fecha_recepcion_inicial.strftime('%Y-%m-%d')
+        if self.instance and self.instance.fecha_vencimiento:
+            self.initial['fecha_vencimiento'] = self.instance.fecha_vencimiento.strftime('%Y-%m-%d')
 
 class AbogadoPqrsForm(forms.ModelForm):
     class Meta:
